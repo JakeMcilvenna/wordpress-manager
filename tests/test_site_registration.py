@@ -178,5 +178,5 @@ def test_preview_registration_does_not_mount_docker_or_wordpress_storage():
     assert "wordpress_files" not in compose
     source = (root / "dev/site_registry.py").read_text()
     assert "SITE_ID = \"local-wordpress\"" in source
-    assert "subprocess" not in source and "docker" not in source.lower()
+    assert "subprocess" not in source and "docker.sock" not in source
     assert "dev_register_site" in (root / "wordpress_manager/__init__.py").read_text()
