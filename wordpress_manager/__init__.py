@@ -50,7 +50,9 @@ def create_app(config=None, collector=None):
             abort(403)
         if request.method not in ("GET", "HEAD", "OPTIONS") and not (
                 app.config.get("AUTH_ENABLED") and request.method == "POST"
-                and request.endpoint in ("login", "logout", "stack_control")):
+                and (request.endpoint in ("login", "logout", "stack_control")
+                     or (app.config.get("DEV_PREVIEW") is True and
+                         request.endpoint in ("dev_register_site", "dev_unregister_site")))):
             abort(405)
 
     from .control import attach

@@ -70,6 +70,21 @@ def database_version():
     return version.removeprefix("5.5.5-")
 
 
+def metadata_rows(raw):
+    """Accept only bounded, plain plugin/theme titles and version strings."""
+    if not isinstance(raw, list):
+        return []
+    items = []
+    for entry in raw[:40]:
+        if not isinstance(entry, dict):
+            continue
+        name, version = entry.get("name"), entry.get("version", "")
+        if (isinstance(name, str) and isinstance(version, str)
+                and 0 < len(name.strip()) <= 120 and len(version) <= 80):
+            items.append({"name": name.strip(), "version": version.strip()})
+    return items
+
+
 def probe_stack():
     """Discover real Docker services and an already-installed WordPress site."""
     components = {}
@@ -126,6 +141,8 @@ def probe_stack():
                 "version": version,
                 "state": "healthy",
                 "source": "Live WordPress REST API and local PHP version probe",
+                "plugins": metadata_rows(runtime.get("plugins")),
+                "themes": metadata_rows(runtime.get("themes")),
             })
     except (OSError, HTTPError, URLError, ValueError, json.JSONDecodeError):
         pass
@@ -144,11 +161,14 @@ class DockerStackCollector(Collector):
                 item.update(components[item["id"]])
                 if item["id"] in ("nginx", "mariadb", "fpm") and not item.get("service"):
                     item["service"] = "Docker Compose " + item["id"]
+        # Count only actual monitored service rows. PHP CLI is a runtime,
+        # not a separate service, even though the Docker PHP probe is healthy.
         snapshot["healthy_services"] = sum(
-            item["state"] == "healthy" for item in snapshot["software"]
+            item["state"] == "healthy" and bool(item.get("service"))
+            for item in snapshot["software"]
         )
         snapshot["service_count"] = sum(
-            item.get("service") is not None for item in snapshot["software"]
+            bool(item.get("service")) for item in snapshot["software"]
         )
         snapshot["dev_sites"] = sites
         snapshot["dev_stack"] = True

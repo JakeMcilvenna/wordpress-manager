@@ -7,3 +7,4 @@
 !dev/
 !dev/preview.py
 !dev/stack_discovery.py
+!dev/site_registry.py
