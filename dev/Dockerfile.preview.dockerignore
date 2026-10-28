@@ -1,0 +1,8 @@
+# Only these public inputs are required to build the preview image.
+# Dockerfile-specific context filtering avoids uploading .env, SSH keys,
+# test archives, local worktrees and other unrelated files to the daemon.
+**
+!deploy/
+!deploy/requirements.lock
+!dev/
+!dev/preview.py
