@@ -1,0 +1,22 @@
+# Preview only: no root privileges, site data, credentials or Docker socket mounts.
+name: wordpress-manager-preview
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: dev/Dockerfile.preview
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:rw,nosuid,noexec,size=64m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    ports:
+      - "127.0.0.1:8090:8090"
+    volumes:
+      - ./:/workspace:ro
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
