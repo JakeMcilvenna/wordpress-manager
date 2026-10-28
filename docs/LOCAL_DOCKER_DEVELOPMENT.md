@@ -59,6 +59,31 @@ http://127.0.0.1:8090; Python changes trigger the development reload.
 The WordPress/database files live in **named Docker volumes**, not on the
 Hetzner server, so they survive ordinary container restarts.
 
+## If Docker Nginx shows as stopped
+
+The local stack uses the upstream **unprivileged Nginx** image. Its master
+does not need to switch user identities, so the Compose security restriction
+`cap_drop: [ALL]` can remain enabled. Do not remove the container security
+restrictions or publish Nginx/database ports on public interfaces.
+
+To inspect failures in PowerShell:
+
+```powershell
+docker compose -f compose.preview.yml -f compose.stack.yml logs --tail=80 nginx
+docker compose -f compose.preview.yml -f compose.stack.yml ps -a
+```
+
+After updating the repository with the unprivileged image fix, recreate only
+the local Nginx service (without resetting WordPress or database volumes):
+
+```powershell
+docker compose -f compose.preview.yml -f compose.stack.yml pull nginx
+docker compose -f compose.preview.yml -f compose.stack.yml up -d --no-deps --force-recreate nginx
+```
+
+Then open http://127.0.0.1:8091. Do not use `down --volumes` to troubleshoot
+a service startup issue: that intentionally deletes your local test websites.
+
 ## Stop, reset and limits
 
 ```powershell
