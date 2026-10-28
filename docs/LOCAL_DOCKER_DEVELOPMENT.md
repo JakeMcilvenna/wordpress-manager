@@ -22,6 +22,10 @@ At first startup, the WordPress URL displays the WordPress installation wizard.
 Complete it using **new local development credentials**. Do not reuse passwords
 or data from production. The initial database can take some time to initialise.
 
+Once signed into the manager, use the **Check local WordPress stack** link in
+its development banner. That screen makes a real, read-only HTTP check from
+the manager container to the Nginx/WordPress container.
+
 The manager's **local preview** login is `admin` / `preview-only`; it does
 not use or affect Hetzner credentials. Choose a different local-only password by
 setting `WM_PREVIEW_PASSWORD` for the dashboard service if you need one. This
