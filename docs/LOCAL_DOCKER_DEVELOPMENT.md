@@ -53,6 +53,34 @@ docker compose -f compose.preview.yml -f compose.stack.yml exec database mariadb
 The WP-CLI image uses the same PHP major/minor version as the WordPress FPM
 image and the WP-CLI 2.12.0 series.
 
+## Live local stack and website discovery
+
+Once WordPress has been installed at http://127.0.0.1:8091, open
+**http://127.0.0.1:8090/view/websites** after signing into WordPress Manager.
+The Websites page lists the installed site, its actual WordPress version,
+live availability, a Visit Site link and a WordPress Admin link. The
+Overview now counts **discovered local websites**, not managed websites.
+Server Setup reports observed Nginx, PHP-FPM and MariaDB versions and health
+rather than misreporting the dashboard container's missing packages.
+
+The manager checks the WordPress REST root, a **fixed development-only
+FastCGI PHP/WordPress version endpoint** on the local Nginx container, and
+the MariaDB unauthenticated protocol greeting. None require Docker socket,
+database passwords, systemd, root privileges or a WordPress administrator
+session. WP-CLI's version is shown as configured by Compose, *not* as
+runtime-verified because the CLI runs only for explicit tool commands.
+
+To activate these discovery changes after pulling this branch, recreate the
+local containers without deleting site or database volumes:
+
+```powershell
+docker compose -f compose.preview.yml -f compose.stack.yml up -d --build --force-recreate dashboard wordpress nginx
+```
+
+The version probe reports the **files and PHP runtime of the local WordPress
+container**, not the production VPS. Discovery does not imply a website is
+registered/managed. It cannot yet create, edit or delete websites.
+
 Source changes to `wordpress_manager/` are bind-mounted read-only into
 the manager's development container. Edit in Codex/VS Code and refresh
 http://127.0.0.1:8090; Python changes trigger the development reload.

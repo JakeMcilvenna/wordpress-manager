@@ -8,11 +8,10 @@ import hmac
 import os
 from pathlib import Path
 import secrets
-from urllib import request as http_request
-from urllib.error import URLError
 
 from flask import render_template
 from wordpress_manager import create_app
+from dev.stack_discovery import DockerStackCollector
 
 
 class PreviewController:
@@ -93,7 +92,7 @@ def session_secret(path=None):
     return value
 
 
-def create_preview_app(*, password=None, secret_key=None):
+def create_preview_app(*, password=None, secret_key=None, observer=None):
     password = password if password is not None else os.environ.get("WM_PREVIEW_PASSWORD", "preview-only")
     if not password:
         raise ValueError("The local preview password cannot be empty")
@@ -105,29 +104,32 @@ def create_preview_app(*, password=None, secret_key=None):
         "TEMPLATES_AUTO_RELOAD": True,
         "AUTH_SETTINGS": {"secret_key": secret_key or session_secret(), "provisioning": True},
         "CONTROLLER": controller,
-    })
+    }, collector=observer or (DockerStackCollector()
+                            if os.environ.get("WM_DEV_WORDPRESS_INTERNAL_URL") else None))
 
     @app.context_processor
     def preview_labels():
+        enabled = bool(os.environ.get("WM_DEV_WORDPRESS_INTERNAL_URL"))
+        snapshot = app.extensions["collector"].snapshot() if enabled else {}
         return {
             "dev_preview": True,
-            "dev_stack_enabled": bool(os.environ.get("WM_DEV_WORDPRESS_INTERNAL_URL")),
+            "dev_stack_enabled": enabled,
+            "dev_sites": snapshot.get("dev_sites", []),
         }
 
     @app.get("/dev/stack")
     def dev_stack():
         # Authentication is handled by the standard Flask before-request gate.
-        # No arbitrary target URL comes from the browser.
-        address = os.environ.get("WM_DEV_WORDPRESS_INTERNAL_URL")
-        status = "Not configured"
-        if address:
-            try:
-                with http_request.urlopen(address, timeout=3) as response:
-                    status = "Responding (HTTP " + str(response.status) + ")"
-            except (OSError, URLError, ValueError):
-                status = "Unavailable"
+        # Reuse fixed-target cached probes instead of following WordPress redirects.
+        enabled = bool(os.environ.get("WM_DEV_WORDPRESS_INTERNAL_URL"))
+        snapshot = app.extensions["collector"].snapshot() if enabled else {}
+        nginx = next((row for row in snapshot.get("software", [])
+                      if row["id"] == "nginx"), None)
+        status = "Connected" if nginx and nginx["state"] == "healthy" else (
+            "Unavailable" if enabled else "Not configured")
         return render_template("dev_stack.html", title="Local WordPress stack",
-                               active="websites", dev_stack_status=status)
+                               active="websites", dev_stack_status=status,
+                               dev_stack_rows=snapshot.get("software", []))
 
     return app
 

@@ -6,3 +6,4 @@
 !deploy/requirements.lock
 !dev/
 !dev/preview.py
+!dev/stack_discovery.py

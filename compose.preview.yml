@@ -18,6 +18,7 @@ services:
       - "127.0.0.1:8090:8090"
     volumes:
       - ./wordpress_manager:/workspace/wordpress_manager:ro
+      - ./dev:/workspace/dev:ro
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
