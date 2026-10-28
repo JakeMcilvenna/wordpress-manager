@@ -1,0 +1,31 @@
+# Interactive Ubuntu 24.04 preview, not the privileged disposable systemd test guest.
+# Match production's OS/Python and reviewed Python dependency lock.
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH=/opt/wordpress-manager-preview-venv/bin:$PATH
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends python3 python3-venv ca-certificates socat \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY deploy/requirements.lock /tmp/wordpress-manager-requirements.lock
+RUN python3 -m venv /opt/wordpress-manager-preview-venv \
+    && /opt/wordpress-manager-preview-venv/bin/python -m pip install \
+        --no-cache-dir --no-deps --require-hashes --only-binary=:all: \
+        -r /tmp/wordpress-manager-requirements.lock \
+    && rm /tmp/wordpress-manager-requirements.lock \
+    && groupadd --gid 10001 wm-preview \
+    && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin wm-preview
+
+COPY dev/preview.py /workspace/dev/preview.py
+WORKDIR /workspace
+USER wm-preview
+EXPOSE 8090
+
+# Keep Flask on loopback inside Docker: the application rejects non-loopback clients.
+# The unprivileged local-only TCP relay makes Docker Desktop port forwarding possible,
+# with the host's mapped port explicitly restricted to 127.0.0.1.
+CMD ["sh", "-c", "socat TCP-LISTEN:8090,bind=0.0.0.0,reuseaddr,fork TCP:127.0.0.1:8080 & exec python -m dev.preview"]

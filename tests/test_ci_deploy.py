@@ -119,8 +119,14 @@ def test_release_builds_git_objects_and_ignores_dirty_checkout(tmp_path):
 def test_workflow_test_gate_and_disabled_default():
     ci = (REPO / '.github/workflows/ci.yml').read_text()
     production = (REPO / '.github/workflows/production.yml').read_text()
-    assert 'branches-ignore: [production]' in ci
-    assert 'workflow_call:' in ci and 'needs: [test, browser, deployment]' in ci
+    # Development uses fast checks, but production keeps all original required jobs.
+    assert 'branches: [main]' in ci
+    assert 'branches: [main, production]' in ci
+    assert 'workflow_call:' in ci
+    assert 'name: test (ubuntu-24.04, 3.12)' in ci
+    assert 'name: test (${{ matrix.os }}, ${{ matrix.python }})' in ci
+    assert "if: github.ref == 'refs/heads/production' || github.base_ref == 'production'" in ci
+    assert 'needs: [test, compatibility, browser, deployment]' in ci
     assert 'WM_TEST_BROWSER: chromium' in ci and 'ci_deploy_integration.py --disposable-system' in ci
     assert 'workflow_dispatch:' in production and 'branches: [production]' in production
     assert "github.ref == 'refs/heads/production' && vars.PRODUCTION_DEPLOY_ENABLED == 'true'" in production
