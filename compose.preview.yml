@@ -2,6 +2,7 @@
 name: wordpress-manager-preview
 services:
   dashboard:
+    platform: linux/amd64
     build:
       context: .
       dockerfile: dev/Dockerfile.preview
@@ -16,7 +17,7 @@ services:
     ports:
       - "127.0.0.1:8090:8090"
     volumes:
-      - ./:/workspace:ro
+      - ./wordpress_manager:/workspace/wordpress_manager:ro
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
