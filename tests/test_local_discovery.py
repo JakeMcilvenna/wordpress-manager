@@ -22,6 +22,7 @@ def test_live_docker_service_discovery_reads_versions_and_site(monkeypatch):
         raise AssertionError("Unapproved discovery URL")
 
     monkeypatch.setattr(stack_discovery, "get_json", fake_json)
+    monkeypatch.setattr(stack_discovery, "nginx_version", lambda: "1.28.0")
     monkeypatch.setattr(stack_discovery, "database_version", lambda: "10.11.14-MariaDB")
     components, sites = stack_discovery.probe_stack()
     assert components["nginx"]["state"] == "healthy"
@@ -40,6 +41,7 @@ def test_discovery_handles_down_services_and_uninstalled_wordpress(monkeypatch):
         raise OSError("Container unavailable")
 
     monkeypatch.setattr(stack_discovery, "get_json", disconnected)
+    monkeypatch.setattr(stack_discovery, "nginx_version", disconnected)
     monkeypatch.setattr(stack_discovery, "database_version", lambda: (_ for _ in ()).throw(OSError()))
     components, sites = stack_discovery.probe_stack()
     assert not sites
@@ -47,6 +49,7 @@ def test_discovery_handles_down_services_and_uninstalled_wordpress(monkeypatch):
     assert components["php"]["state"] == "unknown"
     assert components["mariadb"]["state"] == "unknown"
 
+    monkeypatch.setattr(stack_discovery, "nginx_version", lambda: "1.28.0")
     monkeypatch.setattr(stack_discovery, "get_json", lambda path: (
         ({"php_version": "8.5.12", "wordpress_version": "7.1.4"}, "nginx/1.28.0")
         if path == "/__wm_dev_status" else ({"name": ""}, "")))
@@ -108,3 +111,14 @@ def test_discovery_configuration_never_exposes_vps_secrets():
     assert "wp-includes/version.php" in php
     assert "wp-config.php" not in php
     assert "WordPress REST API" in (ROOT / "wordpress_manager/templates/page.html").read_text()
+
+
+def test_nginx_remains_detected_when_php_fpm_is_down(monkeypatch):
+    monkeypatch.setattr(stack_discovery, "nginx_version", lambda: "1.28.0")
+    monkeypatch.setattr(stack_discovery, "get_json", lambda path: (_ for _ in ()).throw(OSError()))
+    monkeypatch.setattr(stack_discovery, "database_version", lambda: "10.11.14-MariaDB")
+    components, sites = stack_discovery.probe_stack()
+    assert not sites
+    assert components["nginx"]["state"] == "healthy"
+    assert components["php"]["state"] == "unknown"
+    assert components["mariadb"]["state"] == "healthy"
