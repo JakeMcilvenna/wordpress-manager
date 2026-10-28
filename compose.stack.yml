@@ -76,6 +76,7 @@ services:
     volumes:
       - wordpress_files:/var/www/html
     working_dir: /var/www/html
+    entrypoint: ["wp"]
     # One-off CLI invocations; this service does not run by default.
 
 volumes:
