@@ -150,6 +150,7 @@ def test_browser_login_form_origin_and_session(secured):
                 assert page.locator('html').get_attribute('data-theme') == 'dark'
                 assert page.goto(origin + '/api/snapshot').status == 200
                 assert page.reload().status == 200
+                assert page.goto(origin + '/').status == 200
                 assert page.locator('html').get_attribute('data-theme') == 'dark'
                 assert page.locator('#theme-toggle').get_attribute('aria-pressed') == 'true'
                 page.get_by_role('button', name='Switch to light mode').click()
