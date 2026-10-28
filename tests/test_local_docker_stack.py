@@ -13,43 +13,46 @@ def login(client):
         csrf = state["csrf"]
     return client.post("/login", data={
         "username": "admin", "password": "test-preview-password", "csrf": csrf,
-    }, base_url=ORIGIN,
-        headers={"Origin": ORIGIN})
+    }, base_url=ORIGIN, headers={"Origin": ORIGIN})
 
 
 def test_local_preview_uses_real_login_logout_and_csrf_routes():
     app = create_preview_app(password="test-preview-password", secret_key="a" * 64)
     client = app.test_client()
     assert client.get("/", base_url=ORIGIN).status_code == 302
-    assert client.get("/login").status_code == 200
-    assert b"LOCAL DEVELOPMENT PREVIEW" in client.get("/login").data
+    assert client.get("/login", base_url=ORIGIN).status_code == 200
+    assert b"LOCAL DEVELOPMENT PREVIEW" in client.get("/login", base_url=ORIGIN).data
+    assert client.post("/login", data={
+        "username": "admin", "password": "test-preview-password",
+    }, base_url=ORIGIN).status_code == 403
 
-    assert client.post("/login", data={"username": "admin", "password": "test-preview-password"}, base_url=ORIGIN).status_code == 403
     logged_in = login(client)
     assert logged_in.status_code == 302
     assert logged_in.headers["Location"] == "/"
     assert "HttpOnly" in logged_in.headers["Set-Cookie"]
     assert "SameSite=Strict" in logged_in.headers["Set-Cookie"]
-    assert client.get("/").status_code == 200
-    with client.session_transaction() as state:
+    assert client.get("/", base_url=ORIGIN).status_code == 200
+
+    with client.session_transaction(base_url=ORIGIN) as state:
         csrf = state["csrf"]
-    logout = client.post("/logout", data={"csrf": csrf}, base_url="http://127.0.0.1:8090",
-                         headers={"Origin": "http://127.0.0.1:8090"})
+    logout = client.post("/logout", data={"csrf": csrf},
+                         base_url=ORIGIN, headers={"Origin": ORIGIN})
     assert logout.status_code == 302
-    assert client.get("/").status_code == 302
+    assert client.get("/", base_url=ORIGIN).status_code == 302
 
 
 def test_preview_refuses_wrong_password_and_simulates_privileged_actions():
     app = create_preview_app(password="test-preview-password", secret_key="b" * 64)
     client = app.test_client()
-    client.get("/login")
-    with client.session_transaction() as state:
+    client.get("/login", base_url=ORIGIN)
+    with client.session_transaction(base_url=ORIGIN) as state:
         csrf = state["csrf"]
-    assert client.post("/login", data={"csrf": csrf, "username": "admin",
-                                       "password": "wrong"}, base_url=ORIGIN).status_code == 401
+    assert client.post("/login", data={
+        "csrf": csrf, "username": "admin", "password": "wrong",
+    }, base_url=ORIGIN).status_code == 401
     assert login(client).status_code == 302
     assert b"Simulate server software setup" in client.get("/setup/control", base_url=ORIGIN).data
-    with client.session_transaction() as state:
+    with client.session_transaction(base_url=ORIGIN) as state:
         csrf = state["csrf"]
     preview = client.post("/setup/control", data={
         "csrf": csrf, "action": "plan", "php": "8.5",
