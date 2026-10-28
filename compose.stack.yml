@@ -45,7 +45,9 @@ services:
     # FastCGI remains on the private Compose network, never published.
 
   nginx:
-    image: nginx:stable-alpine
+    # Rootless upstream Nginx: master and workers run without SETUID/SETGID.
+    # Standard nginx:stable-alpine cannot work with cap_drop: [ALL].
+    image: nginx/nginx-unprivileged:stable-alpine
     ports:
       - "127.0.0.1:8091:8080"
     depends_on:
