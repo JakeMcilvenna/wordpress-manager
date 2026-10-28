@@ -21,6 +21,7 @@ RUN python3 -m venv /opt/wordpress-manager-preview-venv \
     && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin wm-preview
 
 COPY dev/preview.py /workspace/dev/preview.py
+COPY dev/stack_discovery.py /workspace/dev/stack_discovery.py
 WORKDIR /workspace
 USER wm-preview
 EXPOSE 8090
