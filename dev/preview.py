@@ -8,7 +8,10 @@ import hmac
 import os
 from pathlib import Path
 import secrets
+from urllib import request as http_request
+from urllib.error import URLError
 
+from flask import render_template
 from wordpress_manager import create_app
 
 
@@ -106,7 +109,25 @@ def create_preview_app(*, password=None, secret_key=None):
 
     @app.context_processor
     def preview_labels():
-        return {"dev_preview": True}
+        return {
+            "dev_preview": True,
+            "dev_stack_enabled": bool(os.environ.get("WM_DEV_WORDPRESS_INTERNAL_URL")),
+        }
+
+    @app.get("/dev/stack")
+    def dev_stack():
+        # Authentication is handled by the standard Flask before-request gate.
+        # No arbitrary target URL comes from the browser.
+        address = os.environ.get("WM_DEV_WORDPRESS_INTERNAL_URL")
+        status = "Not configured"
+        if address:
+            try:
+                with http_request.urlopen(address, timeout=3) as response:
+                    status = "Responding (HTTP " + str(response.status) + ")"
+            except (OSError, URLError, ValueError):
+                status = "Unavailable"
+        return render_template("dev_stack.html", title="Local WordPress stack",
+                               active="websites", dev_stack_status=status)
 
     return app
 
