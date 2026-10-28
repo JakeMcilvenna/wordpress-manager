@@ -1,0 +1,20 @@
+{
+  "version": 1,
+  "mode": "operate",
+  "source": "wordpress_manager/static/app.css",
+  "tokens": {
+    "canvas": "#f6f7f8",
+    "surface": "#ffffff",
+    "ink": "#202a33",
+    "muted": "#65717b",
+    "line": "#e5e9ec",
+    "green": "#23674e",
+    "sidebar": "#17262a",
+    "panelRadius": "12px",
+    "controlRadius": "7px"
+  },
+  "focus": { "outline": "3px solid #478bca", "outlineOffset": "4px" },
+  "motion": { "controlTransition": "150ms", "reducedMotion": "disable transitions" },
+  "elevation": "single border, no shadow",
+  "responsive": { "sidebarCollapse": "700px", "overviewSingleColumn": "990px" }
+}

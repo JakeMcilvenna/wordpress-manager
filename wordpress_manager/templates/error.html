@@ -1,0 +1,2 @@
+{% extends 'base.html' %}
+{% block content %}<div class="empty-state"><h1>{{ code }}</h1><p>{% if code == 403 %}This dashboard accepts same-site, loopback connections only. Connect using your SSH tunnel.{% elif code == 405 %}The dashboard is read-only. This request method is unavailable.{% elif code == 400 %}The request or host was not accepted. Use http://127.0.0.1:8080.{% else %}This page could not be found.{% endif %}</p><a class="button" href="/">Return to overview</a></div>{% endblock %}

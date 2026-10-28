@@ -1,0 +1,33 @@
+[Unit]
+Description=Private WordPress Manager (read-only)
+After=network.target
+
+[Service]
+Type=simple
+User=wm-dashboard
+Group=wm-dashboard
+WorkingDirectory=/opt/wordpress-manager
+Environment=PYTHONDONTWRITEBYTECODE=1
+ExecStart=/opt/wordpress-manager/.venv/bin/gunicorn --bind 127.0.0.1:8080 --workers 1 --threads 2 --timeout 45 --no-control-socket --error-logfile - wordpress_manager:create_app()
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wordpress-manager
+
+[Install]
+WantedBy=multi-user.target
