@@ -3,6 +3,8 @@
 # This stack never contacts or controls the production Hetzner services.
 services:
   dashboard:
+    environment:
+      WM_DEV_WORDPRESS_INTERNAL_URL: http://nginx:8080/
     depends_on:
       database:
         condition: service_healthy
