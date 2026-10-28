@@ -213,6 +213,43 @@ A partial private phpMyAdmin install is refused on retry. Inspect `/var/lib/word
 
 Lost password: use the retained root-only initial-password file. To revoke all sessions, stop the control service, replace its credential hash/salt and rotate `secret_key` in `web.json` through an administrator-controlled process, then restart both services. Never place passwords in process arguments or logs. Read-only access logs remain bounded in memory and mirrored to journald; login/approval/job events are durable in the protected SQLite ledger. Protect/rotate exported audit logs according to your own retention policy.
 
+## Live Docker Desktop preview (Ubuntu 24.04)
+
+Use the **unprivileged development preview**, not the disposable privileged
+integration-test container, to inspect UI changes instantly on Windows. Install
+[Docker Desktop](https://www.docker.com/products/docker-desktop/) with **Linux
+containers / WSL2**, then from the repository root in PowerShell run:
+
+```powershell
+docker compose -f compose.preview.yml up --build
+```
+
+Open **http://127.0.0.1:8090**. Edit Python, HTML, CSS or JavaScript files in
+your normal local Codex working tree, then refresh the browser. The Python
+process restarts when code changes; templates also refresh without a rebuild.
+The current files are mounted read-only, so a rebuild is needed only when the
+Python dependency lock or preview Dockerfile changes. Stop with Ctrl+C, then:
+
+```powershell
+docker compose -f compose.preview.yml down
+```
+
+The container uses **Ubuntu 24.04, Python 3.12 and the exact production
+Python dependency lock**, matching the dashboard's application runtime much
+more closely than native Windows preview. It is non-root, has no elevated
+capabilities or mounted secrets, and publishes only the host's
+**127.0.0.1:8090**. The preview stays independent of the Hetzner dashboard
+over the SSH tunnel at **http://localhost:8081**. Never publish the preview
+port on a public interface.
+
+**Scope:** This is the UI and unprivileged Flask application preview, not a
+clone of the entire VPS. It does **not** run systemd, Nginx, PHP-FPM, MariaDB,
+WP-CLI or the restricted provisioner. Its server inventory shows the disposable
+container's local observations, not the VPS's metrics. Authentication and
+stack modifications are disabled. Use the separate `tests/deploy.Dockerfile`
+systemd guest (below) for full installer/SSH/stack integration tests; never
+run those privileged tests against the live VPS.
+
 ## Local development and tests
 
 ```bash
