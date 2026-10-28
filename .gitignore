@@ -19,3 +19,5 @@ instance/
 .impeccable/*
 !.impeccable/design.json
 artifacts/
+
+wordpress-manager-managed.zip
