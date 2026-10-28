@@ -1,6 +1,7 @@
 import hashlib
 import importlib.util
 import io
+import gzip
 import os
 from pathlib import Path
 import tarfile
@@ -59,3 +60,22 @@ def test_cloud_init_embedded_python_and_safe_defaults():
     assert 'PRIVATE KEY' not in template and 'github_pat_' not in template
     assert 'hashlib.sha256(data).hexdigest() != sha' in template
     assert template.index("run('/usr/bin/ssh-keygen'") < template.index("dropin.write_text(candidate)")
+
+
+def test_compressed_metadata_bomb_is_bounded_before_tar_parsing(tmp_path, monkeypatch):
+    monkeypatch.setattr(release, 'MAX_EXPANDED', 1024)
+    data = gzip.compress(b'\0' * 2048)
+    with pytest.raises(ValueError, match='too large'):
+        release.unpack(data, hashlib.sha256(data).hexdigest(), tmp_path / 'bomb')
+    assert not (tmp_path / 'bomb').exists()
+
+
+@pytest.mark.parametrize('name', ['./deploy/install.sh', 'deploy//install.sh', 'deploy/../escape'])
+def test_noncanonical_archive_paths_are_rejected(tmp_path, name):
+    data = io.BytesIO()
+    with tarfile.open(fileobj=data, mode='w:gz') as archive:
+        archive.addfile(tarfile.TarInfo(name))
+    value = data.getvalue()
+    with pytest.raises(ValueError, match='Unsafe'):
+        release.unpack(value, hashlib.sha256(value).hexdigest(), tmp_path / 'out')
+    assert not (tmp_path / 'out').exists()

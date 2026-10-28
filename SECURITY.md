@@ -16,4 +16,15 @@ Managed phpMyAdmin uses a separate unprivileged www-data Nginx instance and PHP 
 
 Deployment trusts an independently pinned archive SHA256 or an explicitly reviewed local checkout. Checksums verify integrity relative to that trust anchor, not publisher identity by themselves. Artifacts and package code execute with administrative privileges; review pins and publishers. Never execute an unverified downloaded script. Private repository credentials are never needed in cloud-init when the reviewed release is separately published.
 
+The optional [production CI/CD boundary](docs/PRODUCTION_DEPLOYMENT.md) is disabled by
+default. Its dedicated SSH identity has only a forced stdin artifact operation and
+a no-argument sudo allowlist. It has no root key, general shell, file-transfer/read
+API, forwarding or client-data group membership. The root receiver verifies the
+archive/manifest/commit in private staging and pins every deployment file against
+administrator-owned policy, including the root provisioner, wheel hashes and units.
+It invokes server-owned upgrade tooling; uploaded deployment scripts and packaging
+hooks are never executed as root. Privileged-policy changes require separate
+administrator review. GitHub branch/environment protection and the dedicated key
+are the delivery trust anchor; the server does not independently attest CI results.
+
 Panel rollback does not reverse OS package operations. Partial provisioning retains resources for inspection instead of deleting websites/databases. Keep independent snapshots/backups. Package/service state is not evidence of site integrity, valid TLS or recoverable backups. Actual cloud-provider first boot and third-party PHP runtime combinations require further disposable environment validation.

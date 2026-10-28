@@ -1,6 +1,6 @@
 """Real provisioning/security exercise, ONLY in a disposable Ubuntu 24.04 guest.
 
-Run after deploy_integration.py. This intentionally leaves installed stack packages
+Run after deploy_integration.py and ci_deploy_integration.py. This leaves stack packages
 and private admin resources in the guest so their survival after uninstall can be checked.
 """
 import argparse
@@ -10,12 +10,15 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import sqlite3
 import subprocess
+import tempfile
 import time
 import urllib.parse
 import urllib.request
 import uninstall_sites
+from deploy_integration import check_health
 
 REPO = Path(__file__).resolve().parents[1]
 BASE = Path('/opt/wordpress-manager')
@@ -102,6 +105,40 @@ def main():
         assert status == 'interrupted'
     print('PASS: localhost phpMyAdmin, preserved PHP config, repeat no-op provisioning', flush=True)
     before = uninstall_sites.prepare()
+    # Prove a real CI activation and administrator rollback preserve an actively
+    # serving stack, not just absent packages and filesystem sentinels.
+    gate = Path('/etc/wordpress-manager-ci/enabled')
+    assert not gate.exists() and Path('/usr/local/sbin/wm-ci-upgrade').is_file()
+    credentials = (CONTROL / 'credentials.json').read_bytes()
+    webconfig = Path('/etc/wordpress-manager/web.json').read_bytes()
+    old = json.loads((BASE / 'state.json').read_text())['current']
+    with tempfile.TemporaryDirectory(prefix='wm-stack-release-', dir='/var/tmp') as temporary:
+        archive = Path(temporary) / 'release.tar.gz'
+        commit = 'c' * 40  # Disposable fixture identity; Git-object builds are tested separately.
+        release = runpy.run_path(str(REPO / 'deploy/release.py'))
+        digest = release['build'](REPO, archive, commit)
+        payload = json.dumps({'commit': commit, 'sha256': digest}).encode() + b'\n' + archive.read_bytes()
+        gate.write_text('enabled\n')
+        gate.chmod(0o600)
+        try:
+            result = subprocess.run(['/usr/local/sbin/wm-ci-upgrade'], input=payload,
+                                    capture_output=True, timeout=1500)
+            assert result.returncode == 0, result.stderr
+            receipt = json.loads(result.stdout)
+            assert receipt['outcome'] == 'success' and receipt['commit'] == commit
+        finally:
+            gate.unlink()
+    check_health()
+    assert uninstall_sites.snapshot() == before
+    assert (CONTROL / 'credentials.json').read_bytes() == credentials
+    assert Path('/etc/wordpress-manager/web.json').read_bytes() == webconfig
+    run('/bin/bash', '/usr/local/lib/wordpress-manager-ci/policy/deploy/upgrade.sh', '--rollback', '--approve-upgrade')
+    assert json.loads((BASE / 'state.json').read_text())['current'] == old
+    check_health()
+    assert uninstall_sites.snapshot() == before
+    assert (CONTROL / 'credentials.json').read_bytes() == credentials
+    assert Path('/etc/wordpress-manager/web.json').read_bytes() == webconfig
+    print('PASS: CI upgrade and rollback preserve serving WordPress/database data, configurations, credentials and shared service PIDs/packages', flush=True)
     run('/bin/bash', REPO / 'deploy/uninstall.sh', '--dry-run')
     assert uninstall_sites.snapshot() == before
     run('/bin/bash', REPO / 'deploy/uninstall.sh', '--yes')

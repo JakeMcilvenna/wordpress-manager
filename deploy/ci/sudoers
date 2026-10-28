@@ -1,0 +1,3 @@
+# Empty argument string means NO arguments; never add a wildcard here.
+Defaults:wm-deploy env_reset, !setenv, secure_path=/usr/sbin:/usr/bin:/sbin:/bin
+wm-deploy ALL=(root) NOPASSWD: /usr/local/sbin/wm-ci-upgrade ""

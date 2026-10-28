@@ -1,7 +1,9 @@
 name: Tests
 on:
   push:
+    branches-ignore: [production]
   pull_request:
+  workflow_call:
 permissions:
   contents: read
 jobs:
@@ -12,8 +14,10 @@ jobs:
         python: ['3.11', '3.12']
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: ${{ matrix.python }}
           cache: pip
@@ -24,8 +28,10 @@ jobs:
   browser:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
       - run: python -m pip install -e ".[test,browser]"
@@ -36,9 +42,11 @@ jobs:
   deployment:
     # This job changes only its fresh, disposable GitHub-hosted Ubuntu VM.
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Create clean disposable Ubuntu systemd guest
         run: |
           docker build -t wordpress-manager-deploy-test -f tests/deploy.Dockerfile .
@@ -46,6 +54,8 @@ jobs:
           docker exec wm-ci sh -c "printf 'disposable Ubuntu deployment test\n' > /run/wm-disposable-test"
       - name: Exercise actual installer, systemd, health checks and rollback
         run: docker exec wm-ci python3 /repo/tests/deploy_integration.py --disposable-system
+      - name: Exercise restricted SSH and privileged production boundary
+        run: docker exec wm-ci python3 /repo/tests/ci_deploy_integration.py --disposable-system
       - name: Exercise authenticated dashboard, restricted provisioner and private phpMyAdmin
         run: docker exec wm-ci python3 /repo/tests/stack_integration.py --disposable-system
       - name: Validate cloud-init template schema
@@ -56,13 +66,29 @@ jobs:
         if: always()
         run: docker rm -f wm-ci
   release-artifact:
+    needs: [test, browser, deployment]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
-      - run: python3 deploy/release.py build wordpress-manager-0.1.0.tar.gz
-      - uses: actions/upload-artifact@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          name: reviewed-release-candidate
+          persist-credentials: false
+      - name: Build twice from the tested Git objects and verify every file
+        env:
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python3 deploy/release.py build release.tar.gz --commit "$COMMIT"
+          python3 deploy/release.py build repeat.tar.gz --commit "$COMMIT"
+          cmp release.tar.gz repeat.tar.gz
+          sha256sum --check release.tar.gz.sha256
+          python3 deploy/release.py verify release.tar.gz "$(cut -d ' ' -f1 release.tar.gz.sha256)" --commit "$COMMIT"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: tested-release-${{ github.sha }}
+          # Re-running all jobs may replace only this run's already-tested artifact.
+          overwrite: true
+          if-no-files-found: error
+          retention-days: 14
           path: |
-            wordpress-manager-0.1.0.tar.gz
-            wordpress-manager-0.1.0.tar.gz.sha256
+            release.tar.gz
+            release.tar.gz.sha256

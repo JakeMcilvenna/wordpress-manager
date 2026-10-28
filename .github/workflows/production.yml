@@ -1,0 +1,47 @@
+name: Production deployment
+on:
+  push:
+    branches: [production]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never cancel an in-flight activation. Server locks also exclude manual/stack operations.
+concurrency:
+  group: wordpress-manager-production
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+  deploy:
+    needs: verify
+    # Repository variable, intentionally absent/false until operator setup is complete.
+    if: github.ref == 'refs/heads/production' && vars.PRODUCTION_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: tested-release-${{ github.sha }}
+          path: candidate
+      - name: Verify and transfer over pinned, restricted SSH
+        env:
+          DEPLOY_ENABLED: ${{ vars.PRODUCTION_DEPLOY_ENABLED }}
+          DEPLOY_HOST: ${{ vars.PRODUCTION_DEPLOY_HOST }}
+          DEPLOY_PORT: ${{ vars.PRODUCTION_DEPLOY_PORT }}
+          DEPLOY_HOST_KEY: ${{ vars.PRODUCTION_SSH_HOST_KEY }}
+          DEPLOY_HOST_FINGERPRINT: ${{ vars.PRODUCTION_SSH_HOST_FINGERPRINT }}
+          DEPLOY_SSH_KEY: ${{ secrets.PRODUCTION_DEPLOY_SSH_KEY }}
+        run: python3 deploy/ci/send.py candidate/release.tar.gz
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: production-receipt-${{ github.sha }}-${{ github.run_attempt }}
+          path: deployment-receipt.json
+          if-no-files-found: error

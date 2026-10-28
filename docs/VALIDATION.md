@@ -2,7 +2,53 @@
 
 All checks were run in the local workspace or disposable Docker guests. No SSH connection to the live Hetzner VPS was made and nothing was published externally.
 
-## Environments and results
+## Production CI/CD validation
+
+- Windows / Python 3.11: **132 passed, 78 skipped**. Linux-only checks account for
+  the skips; the real Chromium login form regression passed.
+- Ubuntu 24.04 amd64 / Python 3.12 as an unprivileged test account: **208 passed,
+  2 skipped**, including Chromium. The separate root deployment/protocol suites
+  passed **82 tests**, including the two root-only ownership checks.
+- The complete real systemd deployment lifecycle passed: fresh/repeat install,
+  invalid source, SIGTERM interruption, runtime-health failure with rollback,
+  approved upgrade, explicit rollback/recovery, uninstall/reinstall and verified
+  published-format archive installation/upgrade/rollback.
+- A fresh disposable Ubuntu SSH/sudo suite passed with the actual production
+  sender. It denied arbitrary commands, SFTP/SCP, forwarding, wrong host keys,
+  extra sudo arguments, private credential/site-file reads, a disabled server gate,
+  malformed/traversal archives, corrupt manifests and mismatched commit identities.
+  Manifest-consistent replacements for the root manager, shell upgrader, provisioner,
+  verifier, dependency lock and service policy were refused. Executable attack
+  payloads never created their root marker. A healthy release produced a receipt
+  with commit, release ID, digest, outcome and timestamp. Both locks blocked
+  competing delivery; failed runtime health restored the prior release. Manual
+  rollback passed; credentials, web configuration and site/shared-component
+  snapshots were unchanged. Test keys existed only inside disposable guests.
+- The real stack/site suite passed authenticated plan/apply, private phpMyAdmin,
+  unchanged PHP configuration and repeat provisioning. Verified CI activation and
+  administrator rollback while real WordPress fixtures served traffic preserved
+  the panel credentials/configuration, production/staging WordPress, MariaDB
+  users/data, site account/FPM pool, TLS, backups/schedules, shared service
+  PIDs/package versions and phpMyAdmin. Removal/purge preserved that same baseline.
+- Git-object release tests proved reproducibility despite dirty/untracked checkout
+  files. Digest, full inventory, per-file hashes, canonical paths, symlink/hardlink
+  rejection and compressed expansion limits passed.
+- Both workflows passed Actionlint; Python compilation, shell parsing, Git
+  whitespace checks and Ubuntu `cloud-init schema` passed.
+
+Initial test-environment failures were corrected before these final results:
+Chromium needed downloading; a minimal guest needed SSH started before `sshd -t`
+and a `/var/www` fixture directory; the full app suite correctly refuses root and
+was rerun as an unprivileged user with Git installed. Disposable root filesystem
+fixtures were cleaned before the independent stack test. None of these runs
+connected to the VPS or used real deployment credentials.
+
+GitHub Actions itself has not run this uncommitted change, and the Hetzner SSH
+configuration/network has not been tested. Deployment remains disabled; follow
+[the operator setup and rollback procedure](PRODUCTION_DEPLOYMENT.md) to configure
+the protected production environment, trusted host key and dedicated identity.
+
+## Earlier baseline validation (retained history)
 
 - Windows / Python 3.11: **90 passed**, 77 POSIX-specific tests skipped.
 - Ubuntu 24.04 amd64 / Python 3.12, unprivileged test account: **165 passed**, two root-only tests skipped (lock ownership and external-account file ownership). The root deployment filesystem suite separately passed **69 tests**, including both root-only checks.
