@@ -112,6 +112,39 @@ docker compose -f compose.preview.yml -f compose.stack.yml up -d --no-deps --for
 Then open http://127.0.0.1:8091. Do not use `down --volumes` to troubleshoot
 a service startup issue: that intentionally deletes your local test websites.
 
+## Register and inspect the local WordPress site
+
+Open http://127.0.0.1:8090/view/websites after signing in. Click
+**Register for monitoring** on your discovered local site. This saves a fixed
+local site ID in the named Docker volume `preview_registry` and redirects
+to the **Website details** screen, which includes live WordPress availability,
+version and installed plugin/theme header metadata.
+
+Registration is deliberately limited to the single WordPress site already
+discovered on the Compose network; it does not accept arbitrary URLs. It
+does **not** modify WordPress, its database, plugins, themes or web server.
+The **Stop tracking this site** action removes only the local registration
+record, never the site or its volumes.
+
+The PHP version/metadata probe reads installed plugin headers and theme
+`style.css` files without loading WordPress or executing plugins. Plugin
+activation and the currently active theme cannot be reliably determined by
+these file-only probes and therefore are **not** claimed. The site details page
+shows installed inventory only.
+
+Registration survives `docker compose ... down` and regular recreation of
+the dashboard container. Do **not** run `down --volumes` unless you intend
+to remove all local test websites, databases **and** the preview registration.
+
+After updating the code, recreate the dashboard and PHP WordPress containers:
+
+```powershell
+docker compose -f compose.preview.yml -f compose.stack.yml up -d --build --force-recreate dashboard wordpress
+```
+
+The Overview service-running count now includes only monitored service
+rows, excluding the non-service PHP runtime row.
+
 ## Stop, reset and limits
 
 ```powershell
