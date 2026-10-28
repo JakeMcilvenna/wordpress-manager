@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+{% from 'macros.html' import status with context %}
+{% block content %}
+<div class="page-heading">
+  <div><h1>{{ site.name }}</h1><p>Live local WordPress details and monitoring registration.</p></div>
+  <a class="button" href="{{ url_for('page', name='websites') }}">Back to websites</a>
+</div>
+<section class="panel">
+  <div class="panel-heading"><div><h2>Website information</h2><p>Details obtained from the isolated local WordPress stack.</p></div>
+    <span class="tag">{{ 'Registered for monitoring' if registered else 'Discovered only' }}</span>
+  </div>
+  <div class="table-scroll" tabindex="0" role="region" aria-label="Website information">
+    <table><tbody>
+      <tr><th scope="row">Site address</th><td><a class="text-link" href="{{ site.url }}" target="_blank" rel="noopener noreferrer">{{ site.url }}</a></td></tr>
+      <tr><th scope="row">WordPress admin</th><td><a class="text-link" href="{{ site.admin_url }}" target="_blank" rel="noopener noreferrer">Open administrator dashboard</a></td></tr>
+      <tr><th scope="row">WordPress version</th><td class="version">{{ site.version }}</td></tr>
+      <tr><th scope="row">Availability</th><td>{{ status(site.state) }}</td></tr>
+    </tbody></table>
+  </div>
+  <div class="control-form">
+  {% if registered %}
+    <p>Registration is stored in your local Docker preview. Unregistering removes only that record, not the WordPress site.</p>
+    <form method="post" action="{{ url_for('dev_unregister_site') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <button type="submit" class="button">Stop tracking this site</button>
+    </form>
+  {% else %}
+    <p>Register this discovered site for future management. Registration never modifies WordPress.</p>
+    <form method="post" action="{{ url_for('dev_register_site') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <button type="submit" class="button">Register for monitoring</button>
+    </form>
+  {% endif %}
+  </div>
+</section>
+<section class="panel">
+  <div class="panel-heading"><div><h2>Installed plugins</h2><p>Detected from local plugin headers; activation status is not verified.</p></div><span class="tag">Read-only</span></div>
+  <div class="table-scroll" tabindex="0" role="region" aria-label="Installed WordPress plugins">
+    <table><thead><tr><th scope="col">Plugin</th><th scope="col">Version</th></tr></thead><tbody>
+    {% for plugin in site.plugins|default([]) %}<tr><td>{{ plugin.name }}</td><td class="version">{{ plugin.version or 'Unknown' }}</td></tr>
+    {% else %}<tr><td colspan="2">No installed plugin headers detected.</td></tr>{% endfor %}
+    </tbody></table>
+  </div>
+</section>
+<section class="panel">
+  <div class="panel-heading"><div><h2>Installed themes</h2><p>Detected from local theme headers; active theme is not verified.</p></div><span class="tag">Read-only</span></div>
+  <div class="table-scroll" tabindex="0" role="region" aria-label="Installed WordPress themes">
+    <table><thead><tr><th scope="col">Theme</th><th scope="col">Version</th></tr></thead><tbody>
+    {% for theme in site.themes|default([]) %}<tr><td>{{ theme.name }}</td><td class="version">{{ theme.version or 'Unknown' }}</td></tr>
+    {% else %}<tr><td colspan="2">No installed theme headers detected.</td></tr>{% endfor %}
+    </tbody></table>
+  </div>
+</section>
+<p class="muted">Local monitoring only. Plugin changes, site creation, backups and other actions remain unavailable until a constrained development executor is implemented and tested.</p>
+{% endblock %}
