@@ -1,0 +1,113 @@
+#cloud-config
+# Replace the public key, immutable HTTPS release URL and trusted SHA256 before use.
+# Keep the default Ubuntu user/provider key as a recovery path until admin login is tested.
+users:
+  - default
+  - name: wmadmin
+    groups: [sudo]
+    shell: /bin/bash
+    lock_passwd: true
+    sudo: ['ALL=(ALL) NOPASSWD:ALL']
+    ssh_authorized_keys:
+      - 'REPLACE_WITH_SSH_ED25519_PUBLIC_KEY'
+# Keep provider root keys usable until wmadmin access has been verified.
+# The late SSH policy permits root keys only, never root passwords.
+disable_root: false
+ssh_pwauth: false
+package_update: true
+package_upgrade: false
+packages:
+  - python3
+  - ca-certificates
+  - unattended-upgrades
+write_files:
+  - path: /root/wordpress-manager-bootstrap.json
+    permissions: '0600'
+    content: |
+      {"url": "https://REPLACE_WITH_RELEASE_HOST/wordpress-manager-0.1.0.tar.gz", "sha256": "REPLACE_WITH_TRUSTED_RELEASE_SHA256", "provision_stack": false, "php": "8.3"}
+  - path: /etc/apt/apt.conf.d/52wordpress-manager-security
+    permissions: '0644'
+    content: |
+      APT::Periodic::Update-Package-Lists "1";
+      APT::Periodic::Unattended-Upgrade "1";
+      Unattended-Upgrade::Automatic-Reboot "false";
+  - path: /root/wordpress-manager-bootstrap.py
+    permissions: '0700'
+    content: |
+      import hashlib, io, json, os, pathlib, re, subprocess, tarfile, tempfile, urllib.request, urllib.parse
+      log = pathlib.Path('/var/log/wordpress-manager-cloud-init.log')
+      marker = pathlib.Path('/var/lib/wordpress-manager-cloud-init-status')
+      def run(*args):
+          subprocess.run(args, check=True)
+      def main():
+          config = json.loads(pathlib.Path('/root/wordpress-manager-bootstrap.json').read_text())
+          url = urllib.parse.urlsplit(config['url'])
+          if url.scheme != 'https' or url.username or url.password or url.query or url.fragment:
+              raise ValueError('Supply a public immutable HTTPS artifact URL without credentials')
+          sha = config['sha256']
+          if not re.fullmatch('[a-f0-9]{64}', sha):
+              raise ValueError('Set the trusted release SHA256')
+          key = pathlib.Path('/home/wmadmin/.ssh/authorized_keys')
+          run('/usr/bin/ssh-keygen', '-l', '-f', str(key))
+          # Validate the candidate SSH configuration before publishing and reloading it.
+          dropin = pathlib.Path('/etc/ssh/sshd_config.d/00-wordpress-manager.conf')
+          candidate = 'PasswordAuthentication no\nKbdInteractiveAuthentication no\nPermitRootLogin prohibit-password\n'
+          if dropin.exists():
+              raise ValueError('SSH management drop-in already exists; inspect manually')
+          dropin.write_text(candidate)
+          try:
+              run('/usr/sbin/sshd', '-t')
+              effective = subprocess.check_output(['/usr/sbin/sshd', '-T'], text=True)
+              if ('permitrootlogin without-password' not in effective and 'permitrootlogin prohibit-password' not in effective) or 'passwordauthentication no' not in effective:
+                  raise ValueError('SSH policy validation failed')
+          except BaseException:
+              dropin.unlink()
+              raise
+          run('/usr/bin/systemctl', 'reload', 'ssh')
+          with urllib.request.urlopen(config['url'], timeout=60) as response:
+              if urllib.parse.urlsplit(response.url).scheme != 'https':
+                  raise ValueError('Insecure artifact redirect')
+              data = response.read(64 * 1024 * 1024 + 1)
+          if len(data) > 64 * 1024 * 1024 or hashlib.sha256(data).hexdigest() != sha:
+              raise ValueError('Release integrity verification failed; nothing executed')
+          with tempfile.TemporaryDirectory(prefix='wm-verified-', dir='/root') as temporary:
+              root = pathlib.Path(temporary)
+              with tarfile.open(fileobj=io.BytesIO(data), mode='r:gz') as archive:
+                  members = archive.getmembers()
+                  if len(members) > 10000 or sum(m.size for m in members) > 128 * 1024 * 1024:
+                      raise ValueError('Release archive too large')
+                  names = set()
+                  for member in members:
+                      path = pathlib.PurePosixPath(member.name)
+                      if (not member.isfile() or path.is_absolute() or '..' in path.parts
+                              or '\\' in member.name or member.name in names):
+                          raise ValueError('Unsafe archive member')
+                      names.add(member.name)
+                  for member in members:
+                      target = root / member.name
+                      target.parent.mkdir(parents=True, exist_ok=True)
+                      target.write_bytes(archive.extractfile(member).read())
+              args = ['/bin/bash', str(root / 'deploy/install.sh'), '--non-interactive']
+              if config['provision_stack']:
+                  args.append('--enable-provisioning')
+              run(*args)
+              if config['provision_stack']:
+                  tool = '/opt/wordpress-manager/current/deploy/provision.py'
+                  plan = json.loads(subprocess.check_output(['/usr/bin/python3', '-I', tool, 'plan', '--php', config['php']], text=True))
+                  run('/usr/bin/python3', '-I', tool, 'apply', '--plan', plan['id'], '--non-interactive', '--approve-server-changes')
+      os.umask(0o077)
+      with log.open('a', buffering=1) as output:
+          os.dup2(output.fileno(), 1)
+          os.dup2(output.fileno(), 2)
+          try:
+              main()
+              marker.write_text('succeeded\n')
+              print('WordPress Manager bootstrap succeeded. Retrieve the password over SSH with sudo; it is never printed here.', flush=True)
+          except BaseException:
+              marker.write_text('FAILED: inspect /var/log/wordpress-manager-cloud-init.log\n')
+              import traceback
+              traceback.print_exc()
+              raise
+runcmd:
+  - [python3, -I, /root/wordpress-manager-bootstrap.py]
+final_message: 'Cloud-init finished. Check /var/lib/wordpress-manager-cloud-init-status and /var/log/wordpress-manager-cloud-init.log for the panel result.'

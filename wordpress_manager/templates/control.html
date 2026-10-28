@@ -1,0 +1,28 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-heading"><div><h1>Install server software</h1><p>Review what is missing, then approve an exact installation plan.</p></div><a class="button" href="{{ url_for('stack_control') }}">Refresh jobs</a></div>
+{% if error %}<p class="notice warning" role="alert">{{ error }}</p>{% endif %}
+<section class="panel control-form">
+<h2>Choose the PHP version for this stack</h2>
+<p>PHP 8.3 comes from Ubuntu 24.04. PHP 8.4 or 8.5 can be selected when already installed with all required extensions. Existing versions and pools are preserved.</p>
+<form method="post">
+<input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="action" value="plan">
+<label for="php">PHP version</label><select name="php" id="php"><option value="8.3">PHP 8.3 · Ubuntu packages</option><option value="8.4">PHP 8.4 · preserve installed version</option><option value="8.5">PHP 8.5 · preserve installed version</option></select>
+<button class="button" type="submit">Detect software and preview plan</button></form>
+<p class="muted">Take a VPS snapshot and verify recovery before approval. No packages are changed by this preview.</p>
+</section>
+{% if plan %}
+<section class="panel audit-panel"><div class="panel-heading"><div><h2>Review the installation plan</h2><p>All new packages, including dependencies, are pinned below. Approval expires in 10 minutes.</p></div></div>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Proposed package installations"><table><thead><tr><th scope="col">Package</th><th scope="col">Exact version</th></tr></thead><tbody>
+{% for name, version in plan.packages.items() %}<tr><td>{{ name }}</td><td class="version">{{ version }}</td></tr>{% else %}<tr><td colspan="2">All required packages are already installed.</td></tr>{% endfor %}
+{% for name in plan.artifacts %}<tr><td>{{ name }}</td><td>Verified release · {{ plan.artifact_pins[name][0].split('/')[-1] }}</td></tr>{% endfor %}
+</tbody></table></div>
+<div class="control-form"><p>{{ plan.notice }}</p><p>Preserved PHP pools: {{ plan.preserved_php|join(', ') or 'None detected' }}.</p><p>phpMyAdmin installed here uses <strong>127.0.0.1:8081</strong>. Open a separate SSH tunnel to use it.</p>
+<p class="muted plan-digest">Plan fingerprint: {{ plan.digest }}</p>
+<form method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="action" value="apply"><input type="hidden" name="plan" value="{{ plan.id }}">
+<label for="confirmation">Type INSTALL MISSING COMPONENTS to approve this plan</label><input id="confirmation" name="confirmation" autocomplete="off" required pattern="INSTALL MISSING COMPONENTS">
+<button type="submit" class="button">Approve and install missing components</button></form></div></section>
+{% endif %}
+<section class="panel audit-panel"><div class="panel-heading"><div><h2>Installation jobs</h2><p>Durable results from the provisioning service. Refresh to see progress.</p></div></div>
+<div class="table-scroll" tabindex="0" role="region" aria-label="Installation jobs"><table><thead><tr><th scope="col">Job</th><th scope="col">Status</th><th scope="col">Details</th></tr></thead><tbody>{% for job in jobs %}<tr><td class="version">{{ job.id[:12] }}</td><td>{{ job.state }}</td><td>{{ job.detail }}</td></tr>{% else %}<tr><td colspan="3">No installations have been approved.</td></tr>{% endfor %}</tbody></table></div></section>
+{% endblock %}

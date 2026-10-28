@@ -1507,3 +1507,12 @@ footer .icon {
   background:#fcfcfd;
   z-index:1;
 }
+.control-form { padding: 22px; max-width: 760px; }
+.control-form form { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; max-width: 560px; min-width: 0; }
+.control-form label { font-weight: 600; margin-top: 10px; }
+.control-form input:not([type=hidden]), .control-form select { width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px; border: 1px solid var(--line, #e5e9ec); border-radius: 7px; background: #fff; color: #202a33; font: inherit; }
+.control-form button { justify-self: start; margin: 8px 0; min-height: 44px; }
+.control-form + .panel { margin-top: 24px; }
+.plan-digest { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+input:focus-visible, select:focus-visible { outline: 2px solid #23674e; outline-offset: 3px; }
+.control-form button { max-width: 100%; white-space: normal; }

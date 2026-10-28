@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-heading"><div><h1>Sign in to your server</h1><p>Use the administrator password generated during installation.</p></div></div>
+<section class="panel control-form">
+{% if error %}<p class="notice warning" role="alert">{{ error }}</p>{% endif %}
+<form method="post" action="{{ url_for('login') }}">
+<input type="hidden" name="csrf" value="{{ csrf_token() }}">
+<label for="username">Username</label><input id="username" name="username" autocomplete="username" required value="admin">
+<label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required maxlength="256">
+<button class="button" type="submit">Sign in</button>
+</form>
+<p class="muted">Connect through your SSH tunnel. Your administrator can retrieve the initial password with the command shown by the installer.</p>
+</section>
+{% endblock %}

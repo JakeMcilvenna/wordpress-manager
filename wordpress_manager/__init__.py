@@ -48,8 +48,13 @@ def create_app(config=None, collector=None):
             local = False
         if not local or request.headers.get("Sec-Fetch-Site") == "cross-site":
             abort(403)
-        if request.method not in ("GET", "HEAD", "OPTIONS"):
+        if request.method not in ("GET", "HEAD", "OPTIONS") and not (
+                app.config.get("AUTH_ENABLED") and request.method == "POST"
+                and request.endpoint in ("login", "logout", "stack_control")):
             abort(405)
+
+    from .control import attach
+    attach(app)
 
     @app.after_request
     def secure_response(response):
@@ -113,7 +118,7 @@ def create_app(config=None, collector=None):
     @app.get("/healthz")
     def health():
         # Dashboard health is independent of monitored service health.
-        return jsonify(status="ok", mode="read-only")
+        return jsonify(status="ok", mode="private")
 
     @app.errorhandler(404)
     @app.errorhandler(403)

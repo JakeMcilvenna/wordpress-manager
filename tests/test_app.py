@@ -64,7 +64,7 @@ def test_root_process_refuses_to_start():
 
 def test_health_does_not_trigger_collector(client, observer):
     with patch.object(observer, "snapshot", side_effect=AssertionError("Probe should not run")):
-        assert client.get("/healthz").get_json() == {"status": "ok", "mode": "read-only"}
+        assert client.get("/healthz").get_json() == {"status": "ok", "mode": "private"}
 
 
 def test_read_log_bounded_and_omits_query_secrets(client, app):

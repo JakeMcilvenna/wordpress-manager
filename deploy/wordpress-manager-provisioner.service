@@ -1,0 +1,28 @@
+[Unit]
+Description=WordPress Manager restricted stack provisioner
+After=network.target
+
+[Service]
+Type=simple
+User=root
+Group=wm-dashboard
+RuntimeDirectory=wordpress-manager
+RuntimeDirectoryMode=0750
+UMask=0077
+WorkingDirectory=/
+ExecStart=/usr/bin/python3 -I /opt/wordpress-manager/current/deploy/provision.py serve
+Restart=on-failure
+RestartSec=5
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+LockPersonality=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

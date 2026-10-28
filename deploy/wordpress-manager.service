@@ -1,14 +1,15 @@
 [Unit]
-Description=Private WordPress Manager (read-only)
+Description=Private WordPress Manager dashboard
 After=network.target
 
 [Service]
 Type=simple
 User=wm-dashboard
 Group=wm-dashboard
-WorkingDirectory=/opt/wordpress-manager
+WorkingDirectory=/opt/wordpress-manager/current
 Environment=PYTHONDONTWRITEBYTECODE=1
-ExecStart=/opt/wordpress-manager/.venv/bin/gunicorn --bind 127.0.0.1:8080 --workers 1 --threads 2 --timeout 45 --no-control-socket --error-logfile - wordpress_manager:create_app()
+Environment=WM_REQUIRE_AUTH=1
+ExecStart=/opt/wordpress-manager/current/.venv/bin/gunicorn --config /dev/null --bind 127.0.0.1:8080 --workers 1 --threads 2 --timeout 45 --no-control-socket --error-logfile - wordpress_manager:create_app()
 Restart=on-failure
 RestartSec=5
 UMask=0077

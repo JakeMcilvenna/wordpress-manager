@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "wordpress-manager"
 version = "0.1.0"
-description = "A private, read-only operations console for a WordPress VPS"
+description = "A private WordPress operations console with constrained stack provisioning"
 requires-python = ">=3.11"
 dependencies = ["Flask>=3.1.3,<3.2"]
 

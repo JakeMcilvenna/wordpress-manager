@@ -21,3 +21,36 @@ jobs:
       - run: python -m pip install -e ".[test]"
       - run: python -m pytest -q
       - run: python -m compileall -q wordpress_manager
+  deployment:
+    # This job changes only its fresh, disposable GitHub-hosted Ubuntu VM.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create clean disposable Ubuntu systemd guest
+        run: |
+          docker build -t wordpress-manager-deploy-test -f tests/deploy.Dockerfile .
+          docker run -d --name wm-ci --privileged --cgroupns=private --tmpfs /run --tmpfs /tmp --mount "type=bind,source=$PWD,target=/repo,readonly" wordpress-manager-deploy-test
+          docker exec wm-ci sh -c "printf 'disposable Ubuntu deployment test\n' > /run/wm-disposable-test"
+      - name: Exercise actual installer, systemd, health checks and rollback
+        run: docker exec wm-ci python3 /repo/tests/deploy_integration.py --disposable-system
+      - name: Exercise authenticated dashboard, restricted provisioner and private phpMyAdmin
+        run: docker exec wm-ci python3 /repo/tests/stack_integration.py --disposable-system
+      - name: Validate cloud-init template schema
+        run: |
+          docker exec wm-ci sh -c 'DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends cloud-init'
+          docker exec wm-ci cloud-init schema --config-file /repo/deploy/cloud-init.yaml
+      - name: Remove disposable guest
+        if: always()
+        run: docker rm -f wm-ci
+  release-artifact:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 deploy/release.py build wordpress-manager-0.1.0.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reviewed-release-candidate
+          path: |
+            wordpress-manager-0.1.0.tar.gz
+            wordpress-manager-0.1.0.tar.gz.sha256
