@@ -21,6 +21,18 @@ jobs:
       - run: python -m pip install -e ".[test]"
       - run: python -m pytest -q
       - run: python -m compileall -q wordpress_manager
+  browser:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install -e ".[test,browser]"
+      - run: python -m playwright install --with-deps chromium
+      - run: python -m pytest -q tests/test_control.py
+        env:
+          WM_TEST_BROWSER: chromium
   deployment:
     # This job changes only its fresh, disposable GitHub-hosted Ubuntu VM.
     runs-on: ubuntu-24.04

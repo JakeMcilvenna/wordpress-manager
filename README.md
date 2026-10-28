@@ -218,6 +218,8 @@ python -m venv .venv
 
 On PowerShell use `.\.venv\Scripts\python`. Local preview has no authentication or mutation routes unless explicit test authentication is injected; deployed systemd requires the root-managed authentication file and fails closed when it is missing. Linux probes run only on the local machine. Snapshot observations use bounded fixed executables and are cached; unknown readings remain unknown. No development command connects to the VPS.
 
+The optional browser regression submits the actual login form to a temporary loopback server and checks Chrome's generated Origin header and session persistence. Install `.[test,browser]`, then run `WM_TEST_BROWSER=chrome python -m pytest -q tests/test_control.py` with installed Google Chrome (PowerShell: `$env:WM_TEST_BROWSER='chrome'`). For bundled Chromium, run `python -m playwright install chromium` and set `WM_TEST_BROWSER=chromium`. CI runs this test with Chromium; ordinary unit tests skip it when the variable is unset.
+
 Unit tests cover release integrity/path traversal, plans, package version preservation, authentication/CSRF, session-bound one-use confirmation, throttling/secret redaction, deployment transactions and listener policy. CI runs ordinary tests on Windows/Ubuntu and real root deployment/provisioning tests only on fresh disposable Ubuntu VMs. Never mark a real server as a disposable test system.
 
 For local systemd integration in Docker (Linux containers):

@@ -50,6 +50,7 @@ def test_security_headers_on_errors_too(client):
     for path in ("/", "/missing", "/static/app.css"):
         response = client.get(path)
         assert response.headers["Cache-Control"] == "no-store"
+        assert response.headers["Referrer-Policy"] == "same-origin"
         assert response.headers["X-Frame-Options"] == "DENY"
         assert "frame-ancestors 'none'" in response.headers["Content-Security-Policy"]
         assert "unsafe-inline" not in response.headers["Content-Security-Policy"]

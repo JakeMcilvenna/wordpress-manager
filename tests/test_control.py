@@ -1,4 +1,8 @@
+import os
+from threading import Thread
+
 import pytest
+from werkzeug.serving import make_server
 from wordpress_manager import create_app
 
 
@@ -26,8 +30,8 @@ def secured(observer):
     return app.test_client(), boundary, app
 
 
-def csrf(client):
-    with client.session_transaction() as state:
+def csrf(client, **kwargs):
+    with client.session_transaction(**kwargs) as state:
         return state['csrf']
 
 
@@ -48,6 +52,104 @@ def test_authentication_and_private_reads(secured):
     assert client.get('/').status_code == 200
     assert client.post('/logout', data={'csrf': csrf(client)}).status_code == 302
     assert client.get('/api/snapshot').status_code == 302
+
+
+@pytest.mark.parametrize('origin', ['http://localhost:8080', 'http://127.0.0.1:8080'])
+def test_same_origin_login_and_session_persistence(secured, origin):
+    client, boundary, app = secured
+    page = client.get('/login', base_url=origin)
+    assert page.headers['Referrer-Policy'] == 'same-origin'
+    previous_csrf = csrf(client, base_url=origin)
+    response = client.post('/login', base_url=origin, headers={'Origin': origin},
+                           data={'csrf': previous_csrf, 'username': 'admin', 'password': 'private-password'})
+    assert response.status_code == 302 and response.headers['Location'] == '/'
+    assert boundary.calls == [('login', {'password': 'private-password'})]
+    with client.session_transaction(base_url=origin) as state:
+        assert state['capability'] == 'session-capability'
+        assert state.permanent
+        assert state['csrf'] != previous_csrf
+    cookie = client.get_cookie('wm_session', domain=origin.split('://')[1].split(':')[0])
+    assert cookie.http_only and cookie.same_site == 'Strict'
+    assert cookie.expires is not None
+    # A new request context must authenticate from the signed cookie alone.
+    resumed = app.test_client()
+    resumed.set_cookie('wm_session', cookie.value, domain=cookie.domain)
+    for path in ('/', '/api/snapshot', '/view/setup', '/setup/control'):
+        assert resumed.get(path, base_url=origin).status_code == 200
+
+
+@pytest.mark.parametrize('path', ['/login', '/logout', '/setup/control'])
+@pytest.mark.parametrize('origin', [
+    'null', 'https://evil.example', 'https://localhost:8080',
+    'http://localhost:8081', 'http://127.0.0.1:8080',
+    'http://localhost:8080.evil.example', 'http://localhost:8080/',
+])
+def test_post_requires_exact_origin_even_with_valid_csrf(secured, path, origin):
+    client, boundary, app = secured
+    client.get('/login', base_url='http://localhost:8080')
+    if path != '/login':
+        client.post('/login', base_url='http://localhost:8080', headers={'Origin': 'http://localhost:8080'},
+                    data={'csrf': csrf(client), 'username': 'admin', 'password': 'private-password'})
+    before = list(boundary.calls)
+    token = csrf(client)
+    response = client.post(path, base_url='http://localhost:8080', headers={'Origin': origin},
+                           data={'csrf': token, 'username': 'admin', 'password': 'private-password',
+                                 'action': 'plan', 'php': '8.3'})
+    assert response.status_code == 403
+    assert boundary.calls == before
+    with client.session_transaction() as state:
+        assert state['csrf'] == token
+        assert state.get('capability') == (None if path == '/login' else 'session-capability')
+
+
+@pytest.mark.parametrize('token', ['', 'incorrect-token'])
+def test_same_origin_does_not_bypass_csrf(secured, token):
+    client, boundary, app = secured
+    client.get('/login')
+    response = client.post('/login', headers={'Origin': 'http://localhost'},
+                           data={'csrf': token, 'username': 'admin', 'password': 'private-password'})
+    assert response.status_code == 403
+    assert not boundary.calls
+
+
+def test_browser_login_form_origin_and_session(secured):
+    channel = os.environ.get('WM_TEST_BROWSER')
+    if not channel:
+        pytest.skip('Set WM_TEST_BROWSER=chrome (installed Chrome) or chromium; install .[test,browser]')
+    from playwright.sync_api import sync_playwright
+
+    client, boundary, app = secured
+    # Use an ephemeral loopback listener and the real template/response headers.
+    server = make_server('127.0.0.1', 0, app, threaded=True)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    origin = f'http://127.0.0.1:{server.server_port}'
+    try:
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(channel=channel)
+            try:
+                page = browser.new_page()
+                login_page = page.goto(origin + '/login')
+                page.get_by_label('Password', exact=True).fill('private-password')
+                with page.expect_response(lambda response: response.url == origin + '/login'
+                                          and response.request.method == 'POST') as submitted:
+                    page.get_by_role('button', name='Sign in', exact=True).click()
+                response = submitted.value
+                # Chrome must generate this header from a native form submission;
+                # no fetch, request interception, or explicit Origin header is used.
+                assert response.request.all_headers()['origin'] == origin
+                assert response.status == 302
+                assert login_page.headers['referrer-policy'] == 'same-origin'
+                page.wait_for_url(origin + '/')
+                assert page.goto(origin + '/api/snapshot').status == 200
+                assert page.reload().status == 200
+                assert boundary.calls == [('login', {'password': 'private-password'})]
+            finally:
+                browser.close()
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+        server.server_close()
 
 
 def test_csrf_origin_and_method_boundaries(secured):

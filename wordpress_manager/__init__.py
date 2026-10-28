@@ -61,7 +61,7 @@ def create_app(config=None, collector=None):
         response.headers.update({
             "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'; object-src 'none'",
             "X-Content-Type-Options": "nosniff", "X-Frame-Options": "DENY",
-            "Referrer-Policy": "no-referrer", "Cache-Control": "no-store",
+            "Referrer-Policy": "same-origin", "Cache-Control": "no-store",
             "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
             "Cross-Origin-Resource-Policy": "same-origin", "Cross-Origin-Opener-Policy": "same-origin",
         })
