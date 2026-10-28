@@ -67,7 +67,10 @@ def test_local_wordpress_compose_has_real_services_without_host_exposure():
     assert "mariadb:10.11" in stack
     assert "wordpress:php8.5-fpm" in stack
     assert "wordpress:cli-2.12.0-php8.5" in stack
-    assert "nginx:stable-alpine" in stack
+    assert "image: nginx/nginx-unprivileged:stable-alpine" in stack
+    assert "cap_drop:" in stack and "- ALL" in stack
+    assert "no-new-privileges:true" in stack
+    assert "read_only: true" in stack
     assert '"127.0.0.1:8091:8080"' in stack
     assert "wordpress_database:/var/lib/mysql" in stack
     assert "wordpress_files:/var/www/html" in stack
