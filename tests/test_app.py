@@ -89,3 +89,21 @@ def test_htmx_fragment_and_vendored_assets(client):
     assert b'id="live"' in response.data
     assert b"<html" not in response.data
     assert client.get("/static/vendor/htmx.min.js").status_code == 200
+
+
+def test_theme_control_is_shared_and_uses_local_static_assets(client):
+    html = client.get("/").data
+    assert b'id="theme-toggle"' in html
+    assert b'aria-label="Switch to dark mode"' in html
+    assert b'aria-pressed="false"' in html
+    assert b'/static/theme.js' in html
+    assert b'content="light dark"' in html
+
+    script = client.get("/static/theme.js")
+    assert script.status_code == 200
+    assert b'wm-theme' in script.data
+    assert b'localStorage' in script.data
+    assert b'prefers-color-scheme: dark' in script.data
+    css = client.get("/static/app.css")
+    assert css.status_code == 200
+    assert b'[data-theme="dark"]' in css.data

@@ -16,6 +16,7 @@
   background:var(--canvas);
   font-size:14px;
   font-synthesis:none;
+  color-scheme:light;
 }
 
 * {
@@ -1516,3 +1517,190 @@ footer .icon {
 .plan-digest { overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
 input:focus-visible, select:focus-visible { outline: 2px solid #23674e; outline-offset: 3px; }
 .control-form button { max-width: 100%; white-space: normal; }
+
+/* Dashboard theme switch: one accessible control in the shared header. */
+.theme-toggle {
+  display:inline-flex;
+  align-items:center;
+  gap:7px;
+  padding:7px 10px;
+  margin-left:9px;
+  min-height:34px;
+  border:1px solid var(--line);
+  border-radius:7px;
+  background:var(--canvas);
+  color:var(--ink);
+  font-size:11px;
+  cursor:pointer;
+  white-space:nowrap;
+}
+.theme-toggle:hover {
+  background:var(--green-soft);
+  border-color:var(--green);
+}
+.theme-toggle .icon {
+  width:15px;
+  height:15px;
+}
+.theme-toggle .theme-sun,
+:root[data-theme="dark"] .theme-toggle .theme-moon {
+  display:none;
+}
+:root[data-theme="dark"] .theme-toggle .theme-sun {
+  display:block;
+}
+
+/* Dark theme uses the same layout and semantic status colours as light mode. */
+:root[data-theme="dark"] {
+  color-scheme:dark;
+  --canvas:#111c21;
+  --surface:#1b2a30;
+  --ink:#eaf1f4;
+  --muted:#a4b8c0;
+  --line:#33464e;
+  --green:#a2dec0;
+  --green-soft:#284638;
+  --amber:#f0c67f;
+  --amber-soft:#403222;
+}
+:root[data-theme="dark"] ::selection {
+  background:#38644e;
+  color:#fff;
+}
+:root[data-theme="dark"] .skip-link,
+:root[data-theme="dark"] th,
+:root[data-theme="dark"] .audit-panel thead th,
+:root[data-theme="dark"] .panel-footer,
+:root[data-theme="dark"] .panel-footnote {
+  background:#21343b;
+}
+:root[data-theme="dark"] .breadcrumb strong,
+:root[data-theme="dark"] .workspace-stat strong,
+:root[data-theme="dark"] .reading .unknown-reading {
+  color:var(--ink);
+}
+:root[data-theme="dark"] .breadcrumb>span,
+:root[data-theme="dark"] .connection,
+:root[data-theme="dark"] .server-mode,
+:root[data-theme="dark"] .resource-heading h2,
+:root[data-theme="dark"] .resource-heading .icon,
+:root[data-theme="dark"] .reading>span:not(.unknown-reading),
+:root[data-theme="dark"] .panel-heading>.icon,
+:root[data-theme="dark"] th,
+:root[data-theme="dark"] .cell-caption,
+:root[data-theme="dark"] .version,
+:root[data-theme="dark"] .panel-footer,
+:root[data-theme="dark"] .panel-footer>.dot,
+:root[data-theme="dark"] .right-caption,
+:root[data-theme="dark"] .workspace-stat,
+:root[data-theme="dark"] .sample-caption,
+:root[data-theme="dark"] .sample-caption>.dot,
+:root[data-theme="dark"] .sample-caption>span:last-child,
+:root[data-theme="dark"] footer,
+:root[data-theme="dark"] .protection-note>.icon {
+  color:var(--muted);
+}
+:root[data-theme="dark"] .avatar,
+:root[data-theme="dark"] .server-symbol,
+:root[data-theme="dark"] .software-mark,
+:root[data-theme="dark"] .empty-icon {
+  background:#263e40;
+  border-color:var(--line);
+  color:#a9e2c1;
+}
+:root[data-theme="dark"] .software-mark.php,
+:root[data-theme="dark"] .software-mark[class*="fpm"] {
+  background:#2e3048;
+  color:#ccc6ff;
+  border-color:#41445d;
+}
+:root[data-theme="dark"] .software-mark.mariadb {
+  background:#39392d;
+  color:#e1d4a3;
+  border-color:#4b4a39;
+}
+:root[data-theme="dark"] .software-mark.wpcli {
+  background:#263d4a;
+  color:#b9dced;
+  border-color:#3a5460;
+}
+:root[data-theme="dark"] .software-mark.phpmyadmin {
+  background:#453527;
+  color:#eed0a6;
+  border-color:#5a4635;
+}
+:root[data-theme="dark"] .software-mark.certbot {
+  background:#2d3a31;
+  color:#cbe1b3;
+  border-color:#405044;
+}
+:root[data-theme="dark"] .button {
+  border-color:var(--line);
+}
+:root[data-theme="dark"] .button:hover {
+  background:#293e42;
+  border-color:#719c86;
+}
+:root[data-theme="dark"] .warning {
+  border-color:#665036;
+  color:var(--amber);
+}
+:root[data-theme="dark"] meter,
+:root[data-theme="dark"] meter::-webkit-meter-bar,
+:root[data-theme="dark"] .uptime-rule {
+  background:#34484e;
+}
+:root[data-theme="dark"] td,
+:root[data-theme="dark"] .workspace-stat {
+  border-bottom-color:var(--line);
+}
+:root[data-theme="dark"] .status,
+:root[data-theme="dark"] .tag {
+  background:#2c3e44;
+  color:#c4d2d7;
+  border-color:var(--line);
+}
+:root[data-theme="dark"] .status.healthy,
+:root[data-theme="dark"] .status.installed {
+  background:var(--green-soft);
+  color:#b5edcc;
+}
+:root[data-theme="dark"] .status.failed,
+:root[data-theme="dark"] .status.stopped {
+  background:#492d30;
+  color:#ffbcb6;
+}
+:root[data-theme="dark"] .status.starting,
+:root[data-theme="dark"] .status.stopping {
+  background:var(--amber-soft);
+  color:var(--amber);
+}
+:root[data-theme="dark"] .tag.amber {
+  background:var(--amber-soft);
+  color:var(--amber);
+  border-color:#665036;
+}
+:root[data-theme="dark"] .control-form input:not([type=hidden]),
+:root[data-theme="dark"] .control-form select {
+  background:#14252b;
+  color:var(--ink);
+  border-color:var(--line);
+}
+:root[data-theme="dark"] input:focus-visible,
+:root[data-theme="dark"] select:focus-visible {
+  outline-color:#a2dec0;
+}
+@media(max-width:700px) {
+  .theme-toggle {
+    margin-left:2px;
+    padding:7px 9px;
+  }
+  .theme-label {
+    display:none;
+  }
+}
+@media(max-width:400px) {
+  .connection-label {
+    display:none;
+  }
+}
