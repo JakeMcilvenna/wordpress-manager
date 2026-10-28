@@ -45,7 +45,7 @@ services:
   nginx:
     image: nginx:stable-alpine
     ports:
-      - "127.0.0.1:8091:80"
+      - "127.0.0.1:8091:8080"
     depends_on:
       wordpress:
         condition: service_started
