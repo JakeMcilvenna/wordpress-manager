@@ -19,6 +19,10 @@ services:
     volumes:
       - ./wordpress_manager:/workspace/wordpress_manager:ro
       - ./dev:/workspace/dev:ro
+      - preview_registry:/var/lib/wm-preview:rw
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONUNBUFFERED: "1"
+
+volumes:
+  preview_registry:
