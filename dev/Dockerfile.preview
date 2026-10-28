@@ -18,7 +18,9 @@ RUN python3 -m venv /opt/wordpress-manager-preview-venv \
         -r /tmp/wordpress-manager-requirements.lock \
     && rm /tmp/wordpress-manager-requirements.lock \
     && groupadd --gid 10001 wm-preview \
-    && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin wm-preview
+    && useradd --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin wm-preview \
+    && mkdir -p /var/lib/wm-preview \
+    && chown 10001:10001 /var/lib/wm-preview
 
 COPY dev/preview.py /workspace/dev/preview.py
 COPY dev/stack_discovery.py /workspace/dev/stack_discovery.py
