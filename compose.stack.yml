@@ -42,6 +42,7 @@ services:
       WORDPRESS_DB_PASSWORD: local-dev-only-wordpress-password
     volumes:
       - wordpress_files:/var/www/html
+      - ./dev/wp-runtime-status.php:/var/www/html/.wm-dev-status.php:ro
     # FastCGI remains on the private Compose network, never published.
 
   nginx:
