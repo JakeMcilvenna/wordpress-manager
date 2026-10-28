@@ -91,6 +91,12 @@ Do not run these commands against the live Hetzner VPS as part of development. T
 
 ## Releases and private repositories
 
+Automatic deployment from `production` is prepared and **disabled by default**.
+`main` runs CI only. See [production CI/CD setup, exact secrets/variables, server
+commands and rollback](docs/PRODUCTION_DEPLOYMENT.md). It uses a dedicated restricted
+SSH account and pinned root-controlled upgrade policy; no live VPS setup or
+deployment is performed by this repository change.
+
 Build a reproducible candidate from a reviewed checkout:
 
 ```bash
@@ -229,6 +235,7 @@ docker build -t wordpress-manager-deploy-test -f tests/deploy.Dockerfile .
 docker run -d --name wm-deploy-test --privileged --cgroupns=private --tmpfs /run --tmpfs /tmp --mount "type=bind,source=$(pwd),target=/repo,readonly" wordpress-manager-deploy-test
 docker exec wm-deploy-test sh -c "printf 'disposable Ubuntu deployment test\n' > /run/wm-disposable-test"
 docker exec wm-deploy-test python3 /repo/tests/deploy_integration.py --disposable-system
+docker exec wm-deploy-test python3 /repo/tests/ci_deploy_integration.py --disposable-system
 docker exec wm-deploy-test python3 /repo/tests/stack_integration.py --disposable-system
 docker stop wm-deploy-test
 docker rm wm-deploy-test

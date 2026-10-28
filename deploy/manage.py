@@ -344,6 +344,12 @@ def build_release(version, files):
     manifest = {"schema": SCHEMA, "version": version,
                 "files": {name: hashlib.sha256(data).hexdigest() for name, data in files.items()},
                 "packages": run(python, "-I", "-m", "pip", "freeze", "--all").splitlines()}
+    if (SOURCE / 'release-manifest.json').is_file():
+        commit = json.loads((SOURCE / 'release-manifest.json').read_text()).get('git_commit')
+        if commit is not None:
+            if not re.fullmatch(r'[a-f0-9]{40}', commit):
+                fail('Invalid release Git commit')
+            manifest['git_commit'] = commit
     write_json(path / "release.json", manifest)
     marker = managed()
     marker['releases'][name]['files'] = tree_inventory(path)
@@ -919,9 +925,12 @@ def uninstall(dry_run=False, purge_recovery=False):
 
 
 def main(argv=None):
+    global SOURCE
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("operation", choices=("install", "upgrade", "uninstall"))
     parser.add_argument("--approve-upgrade", action="store_true", help="Explicitly approve release activation/recovery")
+    parser.add_argument('--release-source', type=Path,
+                        help='Root-owned verified source for a trusted upgrade controller')
     choice = parser.add_mutually_exclusive_group()
     choice.add_argument("--rollback", nargs="?", const="previous", metavar="RELEASE_ID")
     choice.add_argument("--recover", action="store_true", help="Recover an interrupted transaction")
@@ -932,6 +941,14 @@ def main(argv=None):
     parser.add_argument("--trusted-checkout", action="store_true", help="Trust this reviewed local checkout instead of a verified published release")
     parser.add_argument("--enable-provisioning", action="store_true", help="Allow authenticated, confirmed stack jobs")
     args = parser.parse_args(argv)
+    if args.release_source:
+        if args.operation != 'upgrade' or args.rollback or args.recover or args.trusted_checkout:
+            parser.error('--release-source requires a verified forward upgrade')
+        if os.geteuid() != 0 or not args.release_source.is_absolute():
+            parser.error('--release-source requires root and an absolute path')
+        for ancestor in reversed((args.release_source, *args.release_source.parents)):
+            trusted(ancestor, directory=True)
+        SOURCE = args.release_source
     if args.operation == "upgrade" and not args.approve_upgrade:
         parser.error("upgrade, rollback and recovery require --approve-upgrade")
     if args.operation != 'uninstall' and (args.dry_run or args.purge_recovery):
@@ -990,7 +1007,7 @@ def main(argv=None):
         if args.operation in ('install', 'upgrade') and not (args.rollback or args.recover):
             if (SOURCE / 'release-manifest.json').is_file():
                 import importlib.util
-                spec = importlib.util.spec_from_file_location('wm_release_verify', SOURCE / 'deploy/release.py')
+                spec = importlib.util.spec_from_file_location('wm_release_verify', Path(__file__).with_name('release.py'))
                 module = importlib.util.module_from_spec(spec)
                 spec.loader.exec_module(module)
                 module.verify_tree(SOURCE)

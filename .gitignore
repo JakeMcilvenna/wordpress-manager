@@ -21,3 +21,5 @@ instance/
 artifacts/
 
 wordpress-manager-managed.zip
+
+wordpress-manager-*.zip
