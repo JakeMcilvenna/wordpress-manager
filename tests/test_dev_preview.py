@@ -17,7 +17,9 @@ def test_preview_is_ubuntu_and_reuses_reviewed_python_wheels():
 def test_preview_never_mounts_system_secrets_or_listens_on_public_host():
     compose = (ROOT / "compose.preview.yml").read_text()
     assert '"127.0.0.1:8090:8090"' in compose
-    assert "./:/workspace:ro" in compose
+    assert "./wordpress_manager:/workspace/wordpress_manager:ro" in compose
+    assert "platform: linux/amd64" in compose
+    assert "./:/workspace" not in compose
     assert "read_only: true" in compose
     assert "no-new-privileges:true" in compose
     assert "cap_drop:" in compose
@@ -33,3 +35,12 @@ def test_preview_has_reloading_without_debugger():
     assert 'host="127.0.0.1"' in source
     assert 'debug=False' in source
     assert 'use_reloader=True' in source
+
+
+def test_preview_docker_context_excludes_unrelated_local_files():
+    ignore = (ROOT / "dev/Dockerfile.preview.dockerignore").read_text()
+    assert ignore.splitlines()[3] == "**"
+    assert "!deploy/requirements.lock" in ignore
+    assert "!dev/preview.py" in ignore
+    dockerfile = (ROOT / "dev/Dockerfile.preview").read_text()
+    assert "COPY dev/preview.py /workspace/dev/preview.py" in dockerfile
