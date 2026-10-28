@@ -41,7 +41,7 @@ def test_discovery_handles_down_services_and_uninstalled_wordpress(monkeypatch):
         raise OSError("Container unavailable")
 
     monkeypatch.setattr(stack_discovery, "get_json", disconnected)
-    monkeypatch.setattr(stack_discovery, "nginx_version", disconnected)
+    monkeypatch.setattr(stack_discovery, "nginx_version", lambda: disconnected(None))
     monkeypatch.setattr(stack_discovery, "database_version", lambda: (_ for _ in ()).throw(OSError()))
     components, sites = stack_discovery.probe_stack()
     assert not sites
