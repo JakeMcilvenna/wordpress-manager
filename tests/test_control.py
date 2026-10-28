@@ -128,8 +128,14 @@ def test_browser_login_form_origin_and_session(secured):
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch(channel=channel)
             try:
-                page = browser.new_page()
+                page = browser.new_page(color_scheme='light')
                 login_page = page.goto(origin + '/login')
+                assert page.locator('html').get_attribute('data-theme') == 'light'
+                assert page.get_by_role('button', name='Switch to dark mode').count() == 1
+                page.get_by_role('button', name='Switch to dark mode').click()
+                assert page.locator('html').get_attribute('data-theme') == 'dark'
+                assert page.evaluate("localStorage.getItem('wm-theme')") == 'dark'
+                assert page.evaluate('getComputedStyle(document.documentElement).backgroundColor') == 'rgb(17, 28, 33)'
                 page.get_by_label('Password', exact=True).fill('private-password')
                 with page.expect_response(lambda response: response.url == origin + '/login'
                                           and response.request.method == 'POST') as submitted:
@@ -141,8 +147,17 @@ def test_browser_login_form_origin_and_session(secured):
                 assert response.status == 302
                 assert login_page.headers['referrer-policy'] == 'same-origin'
                 page.wait_for_url(origin + '/')
+                assert page.locator('html').get_attribute('data-theme') == 'dark'
                 assert page.goto(origin + '/api/snapshot').status == 200
                 assert page.reload().status == 200
+                assert page.goto(origin + '/').status == 200
+                assert page.locator('html').get_attribute('data-theme') == 'dark'
+                assert page.locator('#theme-toggle').get_attribute('aria-pressed') == 'true'
+                page.get_by_role('button', name='Switch to light mode').click()
+                assert page.locator('html').get_attribute('data-theme') == 'light'
+                assert page.evaluate("localStorage.getItem('wm-theme')") == 'light'
+                assert page.reload().status == 200
+                assert page.locator('html').get_attribute('data-theme') == 'light'
                 assert boundary.calls == [('login', {'password': 'private-password'})]
             finally:
                 browser.close()
