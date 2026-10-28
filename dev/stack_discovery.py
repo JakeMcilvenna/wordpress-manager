@@ -41,6 +41,21 @@ def get_json(path):
     return payload, server
 
 
+def nginx_version():
+    """Check Nginx separately, even if WordPress or PHP-FPM is unavailable."""
+    opener = request.build_opener(NoRedirect())
+    req = request.Request(NGINX_BASE + "/", method="HEAD")
+    try:
+        with opener.open(req, timeout=3) as response:
+            server = response.headers.get("Server", "")
+    except HTTPError as response:
+        # WordPress redirects/404s or upstream 502 still prove that Nginx
+        # itself is reachable and answering HTTP.
+        server = response.headers.get("Server", "")
+    match = re.search(r"nginx/(\d+(?:\.\d+){1,3})", server)
+    return match.group(1) if match else None
+
+
 def database_version():
     """Read MariaDB's unauthenticated protocol greeting, without logging in."""
     with socket.create_connection(("database", 3306), timeout=2) as conn:
@@ -61,23 +76,25 @@ def probe_stack():
     sites = []
     runtime = {}
     try:
-        runtime, server_header = get_json("/__wm_dev_status")
+        components["nginx"] = {"version": nginx_version(), "state": "healthy",
+                               "source": "Internal Nginx HTTP response"}
+    except (OSError, HTTPError, URLError, ValueError):
+        components["nginx"] = {"version": None, "state": "unknown",
+                               "source": "Internal Nginx HTTP response"}
+
+    try:
+        runtime, _ = get_json("/__wm_dev_status")
         php = str(runtime.get("php_version", ""))[:80]
         wp_version = str(runtime.get("wordpress_version", ""))[:80]
         if not re.fullmatch(r"\d+\.\d+(?:\.\d+)?", php):
             raise ValueError("Invalid PHP runtime version")
         if not re.fullmatch(r"\d+\.\d+(?:\.\d+)?", wp_version):
             raise ValueError("Invalid WordPress file version")
-        header = re.search(r"nginx/(\d+(?:\.\d+){1,3})", server_header)
-        components["nginx"] = {"version": header.group(1) if header else None,
-                               "state": "healthy", "source": "Internal Nginx HTTP probe"}
         components["php"] = {"version": php, "state": "healthy",
                              "name": "PHP runtime", "source": "Internal PHP-FPM probe"}
         components["fpm"] = {"version": php, "state": "healthy",
                              "source": "Internal PHP-FPM probe"}
     except (OSError, HTTPError, URLError, ValueError, KeyError, json.JSONDecodeError):
-        components["nginx"] = {"version": None, "state": "unknown",
-                               "source": "Internal Nginx HTTP probe"}
         components["php"] = {"version": None, "state": "unknown",
                              "name": "PHP runtime", "source": "Internal PHP-FPM probe"}
         components["fpm"] = {"version": None, "state": "unknown",
