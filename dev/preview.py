@@ -13,6 +13,7 @@ from urllib.error import URLError
 
 from flask import render_template
 from wordpress_manager import create_app
+from dev.stack_discovery import DockerStackCollector
 
 
 class PreviewController:
@@ -93,7 +94,7 @@ def session_secret(path=None):
     return value
 
 
-def create_preview_app(*, password=None, secret_key=None):
+def create_preview_app(*, password=None, secret_key=None, observer=None):
     password = password if password is not None else os.environ.get("WM_PREVIEW_PASSWORD", "preview-only")
     if not password:
         raise ValueError("The local preview password cannot be empty")
@@ -105,13 +106,17 @@ def create_preview_app(*, password=None, secret_key=None):
         "TEMPLATES_AUTO_RELOAD": True,
         "AUTH_SETTINGS": {"secret_key": secret_key or session_secret(), "provisioning": True},
         "CONTROLLER": controller,
-    })
+    }, collector=observer or (DockerStackCollector()
+                            if os.environ.get("WM_DEV_WORDPRESS_INTERNAL_URL") else None))
 
     @app.context_processor
     def preview_labels():
+        enabled = bool(os.environ.get("WM_DEV_WORDPRESS_INTERNAL_URL"))
+        snapshot = app.extensions["collector"].snapshot() if enabled else {}
         return {
             "dev_preview": True,
-            "dev_stack_enabled": bool(os.environ.get("WM_DEV_WORDPRESS_INTERNAL_URL")),
+            "dev_stack_enabled": enabled,
+            "dev_sites": snapshot.get("dev_sites", []),
         }
 
     @app.get("/dev/stack")
@@ -126,8 +131,10 @@ def create_preview_app(*, password=None, secret_key=None):
                     status = "Responding (HTTP " + str(response.status) + ")"
             except (OSError, URLError, ValueError):
                 status = "Unavailable"
+        snapshot = app.extensions["collector"].snapshot() if address else {}
         return render_template("dev_stack.html", title="Local WordPress stack",
-                               active="websites", dev_stack_status=status)
+                               active="websites", dev_stack_status=status,
+                               dev_stack_rows=snapshot.get("software", []))
 
     return app
 
