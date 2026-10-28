@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-heading"><div><h1>Local WordPress stack</h1><p>Real Docker services for developing and testing WordPress Manager.</p></div></div>
+<section class="panel control-form">
+<h2>WordPress connection</h2>
+<p>Docker Nginx/PHP-FPM status: <strong>{{ dev_stack_status }}</strong></p>
+<p>Open the real local WordPress site at <a class="text-link" href="http://127.0.0.1:8091/" target="_blank" rel="noopener noreferrer">http://127.0.0.1:8091/</a>.</p>
+<p class="muted">This page checks a live local service. Login/logout and sessions use the application routes. Installer confirmations remain simulated until restricted local development adapters are added.</p>
+</section>
+{% endblock %}

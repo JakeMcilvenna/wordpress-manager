@@ -1,0 +1,86 @@
+# Add to compose.preview.yml for real local WordPress development:
+# docker compose -f compose.preview.yml -f compose.stack.yml up --build
+# This stack never contacts or controls the production Hetzner services.
+services:
+  dashboard:
+    environment:
+      WM_DEV_WORDPRESS_INTERNAL_URL: http://nginx:8080/
+    depends_on:
+      database:
+        condition: service_healthy
+      wordpress:
+        condition: service_started
+      nginx:
+        condition: service_started
+
+  database:
+    image: mariadb:10.11
+    environment:
+      MARIADB_ROOT_PASSWORD: local-dev-only-root-password
+      MARIADB_DATABASE: wordpress_dev
+      MARIADB_USER: wordpress_dev
+      MARIADB_PASSWORD: local-dev-only-wordpress-password
+    volumes:
+      - wordpress_database:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    # No public or host-side database port.
+
+  wordpress:
+    image: wordpress:php8.5-fpm
+    depends_on:
+      database:
+        condition: service_healthy
+    environment:
+      WORDPRESS_DB_HOST: database:3306
+      WORDPRESS_DB_NAME: wordpress_dev
+      WORDPRESS_DB_USER: wordpress_dev
+      WORDPRESS_DB_PASSWORD: local-dev-only-wordpress-password
+    volumes:
+      - wordpress_files:/var/www/html
+    # FastCGI remains on the private Compose network, never published.
+
+  nginx:
+    image: nginx:stable-alpine
+    ports:
+      - "127.0.0.1:8091:8080"
+    depends_on:
+      wordpress:
+        condition: service_started
+    volumes:
+      - wordpress_files:/var/www/html:ro
+      - ./dev/nginx-wordpress.conf:/etc/nginx/conf.d/default.conf:ro
+    read_only: true
+    tmpfs:
+      - /var/cache/nginx:rw,nosuid,size=32m
+      - /var/run:rw,nosuid,size=8m
+      - /tmp:rw,nosuid,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+  wpcli:
+    image: wordpress:cli-2.12.0-php8.5
+    profiles: ["tools"]
+    depends_on:
+      database:
+        condition: service_healthy
+    environment:
+      WORDPRESS_DB_HOST: database:3306
+      WORDPRESS_DB_NAME: wordpress_dev
+      WORDPRESS_DB_USER: wordpress_dev
+      WORDPRESS_DB_PASSWORD: local-dev-only-wordpress-password
+    volumes:
+      - wordpress_files:/var/www/html
+    working_dir: /var/www/html
+    entrypoint: ["wp"]
+    # One-off CLI invocations; this service does not run by default.
+
+volumes:
+  wordpress_database:
+  wordpress_files:
