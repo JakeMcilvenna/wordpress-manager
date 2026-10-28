@@ -9,9 +9,10 @@ import os
 from pathlib import Path
 import secrets
 
-from flask import render_template
+from flask import abort, redirect, render_template, url_for
 from wordpress_manager import create_app
 from dev.stack_discovery import DockerStackCollector
+from dev.site_registry import SiteRegistry, SITE_ID
 
 
 class PreviewController:
@@ -92,7 +93,7 @@ def session_secret(path=None):
     return value
 
 
-def create_preview_app(*, password=None, secret_key=None, observer=None):
+def create_preview_app(*, password=None, secret_key=None, observer=None, registry_path=None):
     password = password if password is not None else os.environ.get("WM_PREVIEW_PASSWORD", "preview-only")
     if not password:
         raise ValueError("The local preview password cannot be empty")
@@ -102,10 +103,19 @@ def create_preview_app(*, password=None, secret_key=None, observer=None):
         # TESTING mode. Production still reads its root-owned settings instead.
         "TESTING": True,
         "TEMPLATES_AUTO_RELOAD": True,
+        "DEV_PREVIEW": True,
         "AUTH_SETTINGS": {"secret_key": secret_key or session_secret(), "provisioning": True},
         "CONTROLLER": controller,
     }, collector=observer or (DockerStackCollector()
                             if os.environ.get("WM_DEV_WORDPRESS_INTERNAL_URL") else None))
+
+    registry = SiteRegistry(registry_path) if registry_path is not None else SiteRegistry()
+
+    def known_site():
+        if not os.environ.get("WM_DEV_WORDPRESS_INTERNAL_URL"):
+            return None
+        discovered = app.extensions["collector"].snapshot().get("dev_sites", [])
+        return discovered[0] if discovered else None
 
     @app.context_processor
     def preview_labels():
@@ -115,7 +125,35 @@ def create_preview_app(*, password=None, secret_key=None, observer=None):
             "dev_preview": True,
             "dev_stack_enabled": enabled,
             "dev_sites": snapshot.get("dev_sites", []),
+            "dev_site_registered": registry.is_registered() if enabled else False,
         }
+
+    @app.post("/dev/sites/register")
+    def dev_register_site():
+        # The standard authentication, CSRF and Origin checks run before this.
+        # No browser-provided site URL, path or command is accepted.
+        if known_site() is None:
+            abort(409)
+        registry.register()
+        return redirect(url_for("dev_site_details"))
+
+    @app.post("/dev/sites/unregister")
+    def dev_unregister_site():
+        # This only drops local registry metadata; never touches WordPress.
+        if not os.environ.get("WM_DEV_WORDPRESS_INTERNAL_URL"):
+            abort(404)
+        registry.unregister()
+        return redirect(url_for("page", name="websites"))
+
+    @app.get("/dev/sites/local-wordpress")
+    def dev_site_details():
+        site = known_site()
+        if site is None:
+            abort(404)
+        return render_template(
+            "dev_site_details.html", title="Website details",
+            active="websites", site=site, registered=registry.is_registered(),
+        )
 
     @app.get("/dev/stack")
     def dev_stack():
