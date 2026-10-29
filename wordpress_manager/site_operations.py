@@ -104,11 +104,40 @@ class WebsiteService:
     def list_sites(self):
         return self.backend.list_sites()
 
+    def _require_available(self, plan, *, creating=False):
+        """Reject collisions without confusing one installed site with a full backend.
+
+        A fixed-slot backend keeps rejecting additional sites because the new
+        plan claims the same site ID. A multi-site backend may plan a distinct
+        ID/domain while preserving every existing installation. Any unclear
+        inventory state fails closed rather than permitting an overwrite.
+        """
+        status = self.backend.inspect()
+        sites = self.backend.list_sites()
+        if not isinstance(status, dict) or not isinstance(sites, list):
+            raise ValueError("Website inventory is unavailable")
+        if (status.get("installed") is not True and sites or
+                status.get("installed") is True and not sites):
+            raise ValueError("Website inventory is inconsistent; operator review required")
+        for site in sites:
+            if not isinstance(site, dict) or not isinstance(site.get("id"), str):
+                raise ValueError("Website inventory contains an invalid site identity")
+            domain = site.get("domain")
+            if domain is not None and not isinstance(domain, str):
+                raise ValueError("Website inventory contains an invalid domain")
+            # Site IDs represent owned resources; domains are independently
+            # unique even if a buggy adapter were to assign a different ID.
+            if (site["id"] == plan.site_id or
+                    isinstance(domain, str) and domain.lower().rstrip(".") == plan.spec.domain):
+                if creating:
+                    raise ValueError("This website has already been installed.")
+                raise ValueError("This website slot or domain is already installed.")
+
     def plan(self, title, email, domain, php):
         spec = WebsiteSpec.from_fields(title, email, domain, php)
-        if self.backend.inspect().get("installed") is True:
-            raise ValueError("This website slot is already installed.")
-        return self.backend.plan(spec).as_session()
+        trusted = self.backend.plan(spec)
+        self._require_available(trusted)
+        return trusted.as_session()
 
     def create(self, stored_plan, confirmation):
         if not isinstance(stored_plan, dict):
@@ -124,8 +153,7 @@ class WebsiteService:
             raise ValueError("The website plan changed. Review it again.")
         if confirmation != trusted.confirmation:
             raise ValueError("Review the plan and type " + trusted.confirmation + " to approve.")
-        if self.backend.inspect().get("installed") is True:
-            raise ValueError("This website has already been installed.")
+        self._require_available(trusted, creating=True)
         return self.backend.create(trusted)
 
     def suspend(self, site_id):
