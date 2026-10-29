@@ -69,6 +69,9 @@ def job_worker(job_id, plan, db, audit):
     try:
         native = native_executor()
         audit("site-job-start", {"job": job_id, "site": plan.site_id})
+        # Every import creates a distinct WebsitePlan class. Reconstruct the
+        # reviewed plan under this guarded worker import before type checks.
+        plan = _trusted_plan(native, plan.as_session())
         result = native.create(plan, native.CONFIRMATION)
     except Exception:
         # The executor leaves partial resources marked needs-review. Never
