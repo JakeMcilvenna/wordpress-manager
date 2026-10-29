@@ -10,6 +10,10 @@ on:
     paths:
       - ".github/workflows/native-site-integration.yml"
       - "deploy/ubuntu_site_executor.py"
+      - "deploy/site_control.py"
+      - "deploy/provision.py"
+      - "deploy/manage.py"
+      - "tests/native_site_socket_integration.py"
       - "tests/native_site_integration.py"
       - "tests/stack_integration.py"
 

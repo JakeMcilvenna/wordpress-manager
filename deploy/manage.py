@@ -227,6 +227,7 @@ def source_snapshot():
     fixed = ["pyproject.toml", "README.md", "deploy/manage.py", "deploy/install.sh",
              "deploy/upgrade.sh", "deploy/uninstall.sh", "deploy/requirements.lock",
              "deploy/wordpress-manager.service", "deploy/provision.py", "deploy/release.py",
+             "deploy/site_control.py", "deploy/ubuntu_site_executor.py",
              "deploy/wordpress-manager-provisioner.service", "deploy/cloud-init.yaml"]
     package = SOURCE / "wordpress_manager"
     if package.is_symlink() or not package.is_dir() or (SOURCE / "deploy").is_symlink():

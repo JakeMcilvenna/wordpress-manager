@@ -86,6 +86,16 @@ def main():
     # the actual Ubuntu Nginx/FPM/MariaDB/WP-CLI pathway after stack setup and
     # before uninstall/rollback preservation snapshots, never on Hetzner.
     run('/usr/bin/python3', REPO / 'tests/native_site_integration.py', '--disposable-system')
+    # Use the production-installed root provisioner over its Unix socket, as
+    # the unprivileged dashboard UID, to create a *second* real native site.
+    # The guest-only login password is supplied over stdin, never argv/logs.
+    socket_test = subprocess.run(
+        ['/usr/sbin/runuser', '-u', 'wm-dashboard', '--', '/usr/bin/python3',
+         str(REPO / 'tests/native_site_socket_integration.py'), '--disposable-system'],
+        input=password + '\n', capture_output=True, text=True, timeout=1100,
+    )
+    assert socket_test.returncode == 0, socket_test.stderr[-3000:]
+    assert 'PASS: authenticated guest socket' in socket_test.stdout
     assert hashlib.sha256(sentinel.read_bytes()).hexdigest() == original
     assert '127.0.0.1:8081' in run('ss', '-H', '-ltn', '( sport = :8081 )')
     assert '0.0.0.0:8081' not in run('ss', '-H', '-ltn', '( sport = :8081 )')

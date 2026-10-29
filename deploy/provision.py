@@ -88,6 +88,9 @@ def initialize():
         for row in interrupted:
             connection.execute("UPDATE jobs SET state='interrupted',detail=? WHERE id=?",
                                ("Inspect dpkg --audit and the journal; create a new plan after repair.", row["id"]))
+    # Tables are inert outside the disposable native Ubuntu test guest.
+    with db() as connection:
+        _site_protocol().initialize(connection)
     os.chmod(STATE / "ledger.sqlite", 0o600)
     for row in interrupted:
         audit("interrupted", {"job": row["id"]})
@@ -423,6 +426,17 @@ def job_worker(job, plan):
         connection.execute("UPDATE jobs SET state=?,detail=? WHERE id=?", (state, detail, job))
 
 
+def _site_protocol():
+    spec = importlib.util.spec_from_file_location(
+        "_wm_disposable_site_control", Path(__file__).with_name("site_control.py")
+    )
+    if spec is None or spec.loader is None:
+        raise ValueError("Disposable website control unavailable")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def authenticate(password):
     if not isinstance(password, str) or len(password) > 256:
         raise ValueError("Invalid credentials")
@@ -449,6 +463,12 @@ def dispatch(message, root=False):
     op = message.get("op")
     fields = {"login": {"password"}, "logout": {"capability"}, "status": {"capability"},
               "plan": {"capability", "php"}, "apply": {"capability", "plan", "confirmation"}}
+    fields.update({
+        "site-plan": {"capability", "title", "email", "domain", "php"},
+        "site-apply": {"capability", "plan", "confirmation"},
+        "site-status": {"capability"},
+        "site-result": {"capability", "job"},
+    })
     if op not in fields or set(message) - fields[op] - {"op"}:
         raise ValueError("Unsupported operation or arguments")
     if op == "login" and not root:
@@ -462,6 +482,12 @@ def dispatch(message, root=False):
             return {}
         if op == "status":
             return {"jobs": [dict(row) for row in connection.execute("SELECT * FROM jobs ORDER BY rowid DESC LIMIT 20")]}
+    if op.startswith("site-"):
+        # The native executor checks the disposable guest marker before any
+        # plan, status, approval, or credential retrieval can proceed.
+        return _site_protocol().dispatch(
+            op, message, owner, db, audit, canonical, digest, threading
+        )
     if not root and not json.loads(CONFIG.read_text()).get("provisioning"):
         raise ValueError("Provisioning is disabled by the administrator")
     if op == "plan":
@@ -481,8 +507,9 @@ def dispatch(message, root=False):
                                      (message.get("plan"), owner, time.time())).fetchone()
             if row is None:
                 raise ValueError("Plan is expired, used or belongs to another session")
-            if connection.execute("SELECT 1 FROM jobs WHERE state='running'").fetchone():
-                raise ValueError("A provisioning job is already running")
+            if (connection.execute("SELECT 1 FROM jobs WHERE state='running'").fetchone()
+                    or connection.execute("SELECT 1 FROM site_jobs WHERE state='running'").fetchone()):
+                raise ValueError("A server or website job is already running")
             job = secrets.token_hex(16)
             connection.execute("UPDATE plans SET used=1 WHERE id=?", (row["id"],))
             connection.execute("INSERT INTO jobs VALUES(?, 'running', ?)", (job, "Approved plan " + row["id"]))
