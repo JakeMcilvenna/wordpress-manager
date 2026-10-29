@@ -18,11 +18,10 @@ from pathlib import Path
 import pwd
 import re
 import secrets
-import stat
 import subprocess
 import tempfile
 
-from wordpress_manager.site_operations import WebsitePlan, WebsiteSpec
+from wordpress_manager.site_operations import WebsitePlan, WebsiteSpec, WebsiteOperationUnavailable
 
 DISPOSABLE_MARKER = Path("/run/wm-disposable-test")
 DISPOSABLE_TEXT = "disposable Ubuntu deployment test\n"
@@ -281,9 +280,9 @@ def create(plan, confirmation):
             paths["site"].chmod(0o755)
             db_password = secrets.token_hex(24)
             _run("/usr/bin/mariadb", "--batch", input_text=(
-                f"CREATE DATABASE \`{database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n"
+                f"CREATE DATABASE `{database}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;\n"
                 f"CREATE USER '{database}'@'localhost' IDENTIFIED BY '{db_password}';\n"
-                f"GRANT ALL PRIVILEGES ON \`{database}\`.* TO '{database}'@'localhost';\n"
+                f"GRANT ALL PRIVILEGES ON `{database}`.* TO '{database}'@'localhost';\n"
             ))
             _run("/usr/sbin/runuser", "-u", user, "--", "/usr/local/bin/wp",
                  "core", "download", f"--version={CORE_VERSION}", "--locale=en_US",
@@ -339,3 +338,40 @@ def delete(*args):
 
 def suspend(*args):
     raise NotImplementedError("Native site suspension has not been implemented")
+
+
+class DisposableUbuntuWebsiteBackend:
+    """Implements the shared contract ONLY within a disposable native Ubuntu guest."""
+
+    def inspect(self):
+        disposable_only()
+        records = self.list_sites()
+        return {"installed": bool(records), "sites": len(records)}
+
+    def list_sites(self):
+        disposable_only()
+        if not RECORDS.is_dir():
+            return []
+        sites = []
+        for record in sorted(RECORDS.glob("wm-*.json")):
+            if record.is_symlink():
+                raise ValueError("Unsafe site ledger symlink")
+            info = read_record(record.stem)
+            if info and info.get("state") == "created":
+                sites.append({"id": info["site_id"], "domain": info["domain"],
+                              "name": info["title"], "state": "healthy",
+                              "url": f"http://{info['domain']}:{PORT}/"})
+        return sites
+
+    def plan(self, spec):
+        disposable_only()
+        return make_plan(spec)
+
+    def create(self, plan):
+        return create(plan, CONFIRMATION)
+
+    def suspend(self, site_id):
+        raise WebsiteOperationUnavailable("Native site suspension is disabled")
+
+    def delete(self, site_id, confirmation):
+        raise WebsiteOperationUnavailable("Native site deletion is disabled")
