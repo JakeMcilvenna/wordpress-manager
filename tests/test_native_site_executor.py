@@ -30,7 +30,7 @@ def test_deterministic_opaque_identity_and_fixed_resource_ownership():
 
 
 def test_only_disposable_test_domains_and_known_php_versions():
-    for domain in ("example.com", "real-site.org", "local.invalid"):
+    for domain in ("example.dev", "real-site.org", "local.invalid"):
         with pytest.raises(ValueError, match="end in .test"):
             native.make_plan(spec(domain))
     for php in ("5.6", "8.6", "7.4"):
