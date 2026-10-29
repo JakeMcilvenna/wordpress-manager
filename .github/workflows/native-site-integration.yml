@@ -1,0 +1,59 @@
+name: Native Ubuntu website integration
+
+# Run this expensive real-system test only when native website provisioning
+# changes, or by explicit manual dispatch. Normal dashboard PRs remain fast.
+# This never connects to the Hetzner VPS or triggers production deployment.
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/native-site-integration.yml"
+      - "deploy/ubuntu_site_executor.py"
+      - "tests/native_site_integration.py"
+      - "tests/stack_integration.py"
+
+permissions:
+  contents: read
+
+# Native stack tests install real services and take several minutes. Drop
+# superseded runs for this PR, but do not cancel an unrelated PR's test.
+concurrency:
+  group: native-site-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  disposable-ubuntu-site:
+    name: Native WordPress site in disposable Ubuntu 24.04
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - name: Check out the proposed code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - name: Build isolated Ubuntu 24.04 systemd guest
+        run: |
+          set -euo pipefail
+          docker build -t wordpress-manager-native-test -f tests/deploy.Dockerfile .
+          docker run -d --name wm-native-test --privileged --cgroupns=private \
+            --tmpfs /run --tmpfs /tmp \
+            --mount "type=bind,source=$PWD,target=/repo,readonly" \
+            wordpress-manager-native-test
+          docker exec wm-native-test sh -c "printf 'disposable Ubuntu deployment test\n' > /run/wm-disposable-test"
+
+      - name: Install real dashboard and restricted provisioner inside guest
+        run: docker exec wm-native-test python3 /repo/tests/deploy_integration.py --disposable-system
+
+      - name: Verify deployment security policy inside guest
+        run: docker exec wm-native-test python3 /repo/tests/ci_deploy_integration.py --disposable-system
+
+      - name: Install real Nginx, PHP-FPM, MariaDB, WP-CLI and WordPress website
+        # stack_integration calls native_site_integration before its
+        # uninstall/rollback preservation checks. Failure fails this workflow.
+        run: docker exec wm-native-test python3 /repo/tests/stack_integration.py --disposable-system
+
+      - name: Remove disposable system (even if tests fail)
+        if: always()
+        run: docker rm -f wm-native-test || true

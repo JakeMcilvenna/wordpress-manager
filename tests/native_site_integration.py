@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from deploy import ubuntu_site_executor as native  # noqa: E402
-from wordpress_manager.site_operations import WebsiteService  # noqa: E402
+WebsiteService = native.WebsiteService  # shared stdlib-only contract, no Flask dependency
 
 def check_site(domain):
     connection = http.client.HTTPConnection("127.0.0.1", native.PORT, timeout=10)
@@ -38,6 +38,11 @@ def main():
     backend = native.DisposableUbuntuWebsiteBackend()
     service = WebsiteService(backend)
     assert service.list_sites() == []
+    # The root provisioner uses UMask=0077, but site users must be able to
+    # execute the verified WP-CLI Phar without being able to modify it.
+    wpcli = Path("/usr/local/bin/wp")
+    assert wpcli.stat().st_uid == 0
+    assert wpcli.stat().st_mode & 0o777 == 0o755
     name, domain = "Native test WordPress", "native-one.test"
     plan = service.plan(name, "admin@native-one.test", domain, "8.3")
     assert plan["confirmation"] == native.CONFIRMATION

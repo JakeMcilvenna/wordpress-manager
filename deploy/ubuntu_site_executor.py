@@ -12,6 +12,7 @@ production-specific listener/TLS policies have been implemented.
 """
 import fcntl
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -19,9 +20,31 @@ import pwd
 import re
 import secrets
 import subprocess
+import sys
 import tempfile
 
-from wordpress_manager.site_operations import WebsitePlan, WebsiteSpec, WebsiteOperationUnavailable
+# The restricted Ubuntu executor uses *system Python*, intentionally without
+# Flask. Loading this single stdlib-only shared contract by its reviewed file
+# path avoids importing wordpress_manager.__init__ (which imports Flask).
+# Reuse the ordinary package module when already imported by unit tests.
+def _load_site_contract():
+    module = sys.modules.get("wordpress_manager.site_operations")
+    if module is not None:
+        return module
+    source = Path(__file__).resolve().parents[1] / "wordpress_manager" / "site_operations.py"
+    spec = importlib.util.spec_from_file_location("_wm_native_site_contract", source)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Shared website contract is unavailable")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # dataclasses resolves the declaring module.
+    spec.loader.exec_module(module)
+    return module
+
+_site_contract = _load_site_contract()
+WebsitePlan = _site_contract.WebsitePlan
+WebsiteSpec = _site_contract.WebsiteSpec
+WebsiteService = _site_contract.WebsiteService
+WebsiteOperationUnavailable = _site_contract.WebsiteOperationUnavailable
 
 DISPOSABLE_MARKER = Path("/run/wm-disposable-test")
 DISPOSABLE_TEXT = "disposable Ubuntu deployment test\n"
@@ -96,8 +119,13 @@ def make_plan(spec):
     )
 
 
-def _run(*args, input_text=None, timeout=120):
-    """Fixed argv; never a shell or untrusted executable."""
+def _run(*args, input_text=None, timeout=120, safe_download_diagnostic=False):
+    """Fixed argv; never a shell or untrusted executable.
+
+    Only core download (which receives NO credentials) may include a bounded
+    diagnostic in disposable CI. Password-bearing WP-CLI and MariaDB calls
+    still reveal neither output nor command arguments on error.
+    """
     try:
         completed = subprocess.run(
             list(args), check=True, text=True, input=input_text,
@@ -105,8 +133,17 @@ def _run(*args, input_text=None, timeout=120):
         )
         return completed.stdout.strip()
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        # Command output can contain DB / WordPress credentials: never expose it.
-        raise RuntimeError("Native guest command failed: " + str(args[0])) from None
+        detail = "Native guest command failed: " + str(args[0])
+        if (safe_download_diagnostic and
+                isinstance(exc, subprocess.CalledProcessError) and
+                len(args) >= 6 and args[0] == "/usr/sbin/runuser" and
+                args[4] == "/usr/local/bin/wp" and
+                args[5:7] == ("core", "download")):
+            # Whitelisted non-secret command only; bounded and single-line.
+            safe = (exc.stderr or "")[-750:].replace(chr(13), " ").replace(chr(10), " ").strip()
+            if safe:
+                detail += ": " + safe
+        raise RuntimeError(detail) from None
 
 
 def _atomic_json(path, data):
@@ -288,7 +325,7 @@ def create(plan, confirmation):
             ))
             _run("/usr/sbin/runuser", "-u", user, "--", "/usr/local/bin/wp",
                  "core", "download", f"--version={CORE_VERSION}", "--locale=en_US",
-                 f"--path={paths['site']}", timeout=240)
+                 f"--path={paths['site']}", timeout=240, safe_download_diagnostic=True)
             config = paths["site"] / "wp-config.php"
             _write_exclusive(config, _wordpress_config(database, db_password), 0o640)
             os.chown(config, identity.pw_uid, identity.pw_gid)
