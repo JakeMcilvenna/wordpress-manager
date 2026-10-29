@@ -119,6 +119,39 @@ class BackupManifest:
         return cls(backup_id, site_id, domain, backend, resources, digest, size, created)
 
 
+
+def verify_archive_stream(manifest_record, source):
+    """Check bytes from a *trusted, already-opened* binary archive stream.
+
+    This is a read-only checksum/length check, not archive format validation,
+    ledger authentication, extraction authorization or a restore operation.
+    The caller must resolve the stream from a trusted server-side backup
+    ledger, never from a client-supplied path. At most 1 MiB is requested
+    per read, and no archive contents are retained or returned.
+    """
+    from hmac import compare_digest
+
+    manifest = BackupManifest.from_record(manifest_record)
+    reader = getattr(source, "read", None)
+    if not callable(reader):
+        raise ValueError("Trusted binary archive stream required")
+    digest = sha256()
+    remaining = manifest.archive_bytes
+    while remaining:
+        requested = min(1024 * 1024, remaining)
+        chunk = reader(requested)
+        if not isinstance(chunk, bytes) or not 1 <= len(chunk) <= requested:
+            raise ValueError("Backup archive size or binary stream mismatch")
+        digest.update(chunk)
+        remaining -= len(chunk)
+    # A correct prefix is insufficient: reject appended archive bytes too.
+    extra = reader(1)
+    if not isinstance(extra, bytes) or extra:
+        raise ValueError("Backup archive size or binary stream mismatch")
+    if not compare_digest(digest.hexdigest(), manifest.archive_sha256):
+        raise ValueError("Backup archive SHA-256 mismatch")
+
+
 class BackupPlanner:
     """Pure review-only plans using server-owned inventory, never client paths.
 
