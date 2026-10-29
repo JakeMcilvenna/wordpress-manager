@@ -48,7 +48,7 @@
       <input id="confirmation" name="confirmation" type="text" autocomplete="off" required placeholder="CREATE LOCAL SITE">
       <button class="button" type="submit">Create local WordPress website</button>
     </form>
-    <a class="text-link" href="{{ url_for('dev_create_site') }}">Edit the plan</a>
+    <a class="text-link" href="{{ url_for('dev_create_site', edit=1) }}">Edit the plan</a>
   </div>
 </section>
 {% else %}
