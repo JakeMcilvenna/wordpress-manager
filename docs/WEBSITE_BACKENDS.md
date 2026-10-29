@@ -164,3 +164,30 @@ invokes the disposable test helper from Flask or weakens its guest-only guard.
    production PR expose website operations on the real VPS.
 
 See `AGENTS.md` for rules every future development session must follow.
+
+
+## Backup and restore: ownership preflight only (not executable)
+
+The shared `wordpress_manager/backup_planning.py` module introduces a
+**read-only, fail-closed planning contract** for later backup and restore
+development. It does **not** create backups, read archive bytes, restore a
+site, change WordPress, or enable any dashboard, Docker, Ubuntu or Hetzner
+operation.
+
+A trusted server-side ownership inventory must supply the site ID, canonical
+domain, backend, health state and exact owned resources. A restore additionally
+requires a server-retrieved versioned backup manifest with the same site ID,
+domain, backend and resource inventory, a bounded archive size, a SHA-256
+checksum field and a UTC timestamp. Cross-site or ambiguous ownership, unknown
+manifest fields, invalid metadata and unhealthy/partially installed sites fail
+closed. The review plan includes an explicit target-site confirmation and is
+always marked `executable: false`. Both execution entrypoints raise
+`WebsiteOperationUnavailable` unconditionally.
+
+The manifest digest is **not an authentication signature or archive integrity
+verification**: the future privileged executor must validate the actual
+archive bytes and authenticate the trusted backup ledger, then prove
+site-scoped locking, safe staging, rollback, retention and recovery in real
+disposable Ubuntu and local Docker integration tests. No arbitrary client
+archive path, target directory, Docker command or shell argument is accepted.
+Never enable deletion or restore from these plans alone.
