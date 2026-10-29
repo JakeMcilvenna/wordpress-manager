@@ -1,5 +1,13 @@
 # WordPress Manager
 
+> **Website development architecture:** WordPress Manager is a native Ubuntu
+> 24.04 server panel; Docker Desktop is only the local test environment.
+> All website lifecycle features must share the validation/planning/approval
+> layer in `wordpress_manager/site_operations.py` and have separate Docker
+> and Ubuntu adapters. **Ubuntu website provisioning is not yet enabled.**
+> See [Backend architecture](docs/WEBSITE_BACKENDS.md) and
+> [development rules](AGENTS.md) before adding website-management features.
+
 A private Flask operations console for WordPress servers, with automated panel deployment and an optional restricted server-stack installer. The dashboard runs as a locked, unprivileged account and listens only on **127.0.0.1:8080**. Access it through SSH. No live VPS is contacted by this repository or its tests.
 
 The tested production target is **Ubuntu 24.04 LTS on amd64 with systemd**, at least 768 MiB RAM and 2 GiB free on `/opt`. Use at least 2 GiB RAM for stack provisioning. Other distributions and architectures are not supported. Local Windows preview remains available for development.
