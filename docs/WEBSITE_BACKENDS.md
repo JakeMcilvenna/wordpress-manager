@@ -64,7 +64,10 @@ configuration, and journal operations with rollback on failure.
 
 WebsiteService now checks the selected backend's actual managed-site inventory,
 rather than refusing every new plan whenever any site exists. Unique site IDs
-and canonical domains must not collide. Inconsistent inventories fail closed.
+and canonical domains must not collide. Inconsistent inventories fail closed,
+including missing or non-boolean installation state, duplicate ownership IDs,
+duplicate canonical domains, and empty site identities. Both planning and
+confirmation recheck this inventory before invoking the platform adapter.
 
 This does not add dynamic Docker slots: the current local provisioner still
 owns one fixed site ID and prevents additional installations. The native
