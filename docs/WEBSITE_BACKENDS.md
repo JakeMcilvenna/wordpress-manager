@@ -185,8 +185,14 @@ always marked `executable: false`. Both execution entrypoints raise
 `WebsiteOperationUnavailable` unconditionally.
 
 The manifest digest is **not an authentication signature or archive integrity
-verification**: the future privileged executor must validate the actual
-archive bytes and authenticate the trusted backup ledger, then prove
+verification**. A separate, read-only `verify_archive_stream` helper can
+compare the SHA-256 and exact byte count of a **trusted server-opened binary
+stream** against a validated manifest. It requests at most 1 MiB per read,
+rejects truncation and appended data, and never opens a path, extracts files,
+or performs a write. It does **not** authenticate the manifest or ownership
+ledger, validate the archive format or detect unsafe entries such as symlinks
+and traversal paths. The future privileged executor must authenticate the
+trusted backup ledger and verify archive format and entries, then prove
 site-scoped locking, safe staging, rollback, retention and recovery in real
 disposable Ubuntu and local Docker integration tests. No arbitrary client
 archive path, target directory, Docker command or shell argument is accepted.
