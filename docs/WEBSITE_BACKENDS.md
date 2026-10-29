@@ -164,3 +164,31 @@ invokes the disposable test helper from Flask or weakens its guest-only guard.
    production PR expose website operations on the real VPS.
 
 See `AGENTS.md` for rules every future development session must follow.
+
+
+## Site deletion: review-only ownership and recovery preflight
+
+The shared `wordpress_manager/deletion_planning.py` module introduces a
+**read-only deletion review contract**, not a deletion executor. It is not
+wired to Flask, the Docker adapter, the Ubuntu backend or the root socket.
+`DeletionPlanner.plan_delete(site_id)` accepts only a validated site ID and
+reads the trusted server-side site record, **complete** cross-site ownership
+inventory, operation journal and recovery-point metadata. It fails closed
+when the selected site is unhealthy, records disagree, another site claims
+the same domain or resource, any operation is unfinished/ambiguous, or the
+recovery point does not exactly match the selected site's identity and owned
+resources. The review requires a typed `DELETE <site-id> <domain>`
+confirmation, a snapshot digest and explicit gates for locking, verified
+restorability, rollback and audit.
+
+A ledger's `state: verified`, SHA-256 field and snapshot digest are **not**
+proof that the archive is authentic or restorable. No file is opened,
+modified or removed; `executable` is always false, and
+`DeletionPlanner.delete()` always raises
+`WebsiteOperationUnavailable`. This does **not** enable site deletion on
+Docker, Ubuntu, production or Hetzner. Before any deletion implementation,
+require a durable authenticated ownership/recovery ledger, real successful
+restore of a site-scoped backup, race-safe locking and revalidation,
+non-adoption of unmanaged resources, audit, staged rollback and disposable
+Ubuntu/Docker integration tests. Never derive deletion paths or database
+names from browser input.
