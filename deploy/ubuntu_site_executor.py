@@ -140,7 +140,7 @@ def _run(*args, input_text=None, timeout=120, safe_download_diagnostic=False):
                 args[4] == "/usr/local/bin/wp" and
                 args[5:7] == ("core", "download")):
             # Whitelisted non-secret command only; bounded and single-line.
-            safe = (exc.stderr or "")[-750:].replace("\\r", " ").replace("\\n", " ").strip()
+            safe = (exc.stderr or "")[-750:].replace(chr(13), " ").replace(chr(10), " ").strip()
             if safe:
                 detail += ": " + safe
         raise RuntimeError(detail) from None
