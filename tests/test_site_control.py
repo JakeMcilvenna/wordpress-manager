@@ -151,3 +151,56 @@ def test_restart_marks_running_jobs_interrupted_without_retry(control):
         interrupted = m.initialize(connection)
     assert interrupted == ["a" * 32]
     assert call("site-status")["jobs"][0]["state"] == "interrupted"
+
+
+
+def test_worker_rebuilds_plan_from_a_fresh_native_executor_import(control):
+    """Separate module imports produce distinct WebsitePlan classes."""
+    m, db, call, events, monkeypatch = control
+    imports = []
+
+    def new_native_module():
+        class Spec:
+            @staticmethod
+            def from_fields(title, email, domain, php):
+                if domain != "sample.test" or php != "8.3":
+                    raise ValueError("Invalid guest site")
+                return SimpleNamespace(title=title, email=email, domain=domain, php=php)
+
+        class Plan:
+            site_id = "wm-aaaaaaaaaaaa"
+
+            def __init__(self, spec):
+                self.spec = spec
+
+            def as_session(self):
+                return dict(
+                    title=self.spec.title, email=self.spec.email,
+                    domain=self.spec.domain, php=self.spec.php,
+                    site_id=self.site_id, backend="ubuntu-disposable",
+                    resources=["site:owned"], confirmation="CREATE NATIVE TEST SITE",
+                )
+
+        def create(plan, confirmation):
+            # This matches the actual native executor's isinstance guard.
+            assert type(plan) is Plan, "Plan belongs to a different module import"
+            assert confirmation == "CREATE NATIVE TEST SITE"
+            return {"site_id": plan.site_id, "installed": True, "password": "one-use"}
+
+        imports.append(Plan)
+        return SimpleNamespace(
+            WebsiteSpec=Spec, CONFIRMATION="CREATE NATIVE TEST SITE",
+            make_plan=lambda spec: Plan(spec), _preflight=lambda plan: None,
+            create=create,
+        )
+
+    monkeypatch.setattr(m, "native_executor", new_native_module)
+    plan = call("site-plan", title="Sample", email="admin@sample.test",
+                domain="sample.test", php="8.3")
+    job = call("site-apply", plan=plan["id"],
+               confirmation="CREATE NATIVE TEST SITE")["job"]
+    assert len(imports) == 3  # plan, apply, background worker
+    assert len(set(imports)) == 3
+    assert call("site-status")["jobs"][0]["state"] == "succeeded"
+    assert call("site-result", job=job)["password"] == "one-use"
+    assert "one-use" not in str(events)
