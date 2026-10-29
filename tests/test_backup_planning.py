@@ -1,9 +1,11 @@
 """Backup/restore preflight must never select another site's resources."""
 from copy import deepcopy
+from hashlib import sha256
+from io import BytesIO
 
 import pytest
 
-from wordpress_manager.backup_planning import BackupManifest, BackupPlanner
+from wordpress_manager.backup_planning import BackupManifest, BackupPlanner, verify_archive_stream
 from wordpress_manager.site_operations import WebsiteOperationUnavailable
 
 
@@ -167,3 +169,74 @@ def test_manifest_metadata_digest_changes_if_archive_metadata_changes():
     ledger.backups[BACKUP_ID]["archive_sha256"] = "c" * 64
     changed = planner.plan_restore(SITE["site_id"], BACKUP_ID)
     assert original["manifest_digest"] != changed["manifest_digest"]
+
+
+def _manifest_for_bytes(payload):
+    manifest = deepcopy(MANIFEST)
+    manifest["archive_bytes"] = len(payload)
+    manifest["archive_sha256"] = sha256(payload).hexdigest()
+    return manifest
+
+
+def test_read_only_archive_verifier_checks_exact_bytes_and_leaves_stream_open():
+    payload = b"trusted test backup data" * 100
+    stream = BytesIO(payload)
+    assert verify_archive_stream(_manifest_for_bytes(payload), stream) is None
+    assert stream.closed is False
+
+
+@pytest.mark.parametrize("altered", [
+    lambda data: data[:-1],
+    lambda data: data + b"x",
+    lambda data: b"X" + data[1:],
+])
+def test_archive_verifier_rejects_truncated_appended_or_modified_bytes(altered):
+    payload = b"trusted test backup data"
+    with pytest.raises(ValueError, match="archive"):
+        verify_archive_stream(_manifest_for_bytes(payload), BytesIO(altered(payload)))
+
+
+def test_archive_verifier_limits_read_requests_and_checks_trailing_byte():
+    payload = b"x" * (1024 * 1024 + 9)
+
+    class TrackingStream:
+        def __init__(self, data):
+            self.source = BytesIO(data)
+            self.requests = []
+
+        def read(self, amount):
+            self.requests.append(amount)
+            return self.source.read(amount)
+
+    stream = TrackingStream(payload)
+    verify_archive_stream(_manifest_for_bytes(payload), stream)
+    assert stream.requests == [1024 * 1024, 9, 1]
+
+
+def test_archive_verifier_rejects_nonbinary_and_nonconforming_streams():
+    payload = b"trusted data"
+    manifest = _manifest_for_bytes(payload)
+
+    class TextStream:
+        def read(self, amount):
+            return "text instead of bytes"
+
+    class OversizedStream:
+        def read(self, amount):
+            return b"x" * (amount + 1)
+
+    for stream in (None, TextStream(), OversizedStream()):
+        with pytest.raises(ValueError, match="stream|size"):
+            verify_archive_stream(manifest, stream)
+
+
+def test_invalid_archive_metadata_rejected_before_any_stream_read():
+    manifest = _manifest_for_bytes(b"data")
+    manifest["archive_bytes"] = 0
+
+    class NeverRead:
+        def read(self, amount):
+            raise AssertionError("invalid manifest must fail before reading")
+
+    with pytest.raises(ValueError, match="size"):
+        verify_archive_stream(manifest, NeverRead())
