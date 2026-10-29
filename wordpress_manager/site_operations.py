@@ -116,19 +116,31 @@ class WebsiteService:
         sites = self.backend.list_sites()
         if not isinstance(status, dict) or not isinstance(sites, list):
             raise ValueError("Website inventory is unavailable")
-        if (status.get("installed") is not True and sites or
-                status.get("installed") is True and not sites):
+        installed = status.get("installed")
+        if type(installed) is not bool or installed != bool(sites):
             raise ValueError("Website inventory is inconsistent; operator review required")
+        seen_ids = set()
+        seen_domains = set()
         for site in sites:
-            if not isinstance(site, dict) or not isinstance(site.get("id"), str):
+            if (not isinstance(site, dict) or
+                    not isinstance(site.get("id"), str) or
+                    not site["id"].strip()):
                 raise ValueError("Website inventory contains an invalid site identity")
             domain = site.get("domain")
-            if domain is not None and not isinstance(domain, str):
+            if domain is not None and (not isinstance(domain, str) or not domain.strip()):
                 raise ValueError("Website inventory contains an invalid domain")
+            canonical_domain = domain.lower().rstrip(".") if domain is not None else None
+            # Duplicate records are ambiguous ownership, even when neither
+            # collides with the new site. Never proceed on an unsafe inventory.
+            if (site["id"] in seen_ids or
+                    canonical_domain is not None and canonical_domain in seen_domains):
+                raise ValueError("Website inventory contains duplicate site ownership")
+            seen_ids.add(site["id"])
+            if canonical_domain is not None:
+                seen_domains.add(canonical_domain)
             # Site IDs represent owned resources; domains are independently
             # unique even if a buggy adapter were to assign a different ID.
-            if (site["id"] == plan.site_id or
-                    isinstance(domain, str) and domain.lower().rstrip(".") == plan.spec.domain):
+            if site["id"] == plan.site_id or canonical_domain == plan.spec.domain:
                 if creating:
                     raise ValueError("This website has already been installed.")
                 raise ValueError("This website slot or domain is already installed.")
