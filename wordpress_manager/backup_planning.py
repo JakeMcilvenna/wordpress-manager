@@ -155,8 +155,8 @@ def verify_archive_stream(manifest_record, source):
 class BackupPlanner:
     """Pure review-only plans using server-owned inventory, never client paths.
 
-    inventory.site(site_id) and inventory.backup(backup_id) must be trusted
-    read-only ledger lookups. No executor is attached to this class.
+    inventory.site(site_id), sites(), jobs() and backup(backup_id) must be
+    complete trusted server-side read-only ledger lookups. No executor is attached to this class.
     """
 
     def __init__(self, inventory):
@@ -167,7 +167,56 @@ class BackupPlanner:
         site = OwnedSite.from_record(self.inventory.site(site_id))
         if site.site_id != site_id:
             raise ValueError("Owned site identity mismatch")
+        self._verify_ownership_snapshot(site)
         return site
+
+    def _verify_ownership_snapshot(self, selected):
+        """Fail closed if any site shares a resource/domain or a job is unfinished.
+
+        Both lookups must be complete trusted server-side snapshots. This
+        read-only check is not a concurrency lock; a future executor must
+        repeat it under an exclusive lock before touching backup bytes.
+        """
+        records = self.inventory.sites()
+        if not isinstance(records, (list, tuple)) or not 1 <= len(records) <= 10000:
+            raise ValueError("Complete site inventory required")
+        site_ids, domains, resources = set(), set(), set()
+        selected_found = False
+        for record in records:
+            if not isinstance(record, dict):
+                raise ValueError("Complete site inventory required")
+            site_id = _identity(record.get("site_id"), _SITE_ID, "site ID")
+            domain = _domain(record.get("domain"))
+            _identity(record.get("backend"), _BACKEND, "backend")
+            owned = _resources(record.get("resources"))
+            if site_id in site_ids or domain in domains:
+                raise ValueError("Ambiguous site or domain ownership")
+            site_ids.add(site_id)
+            domains.add(domain)
+            for resource in owned:
+                if resource in resources:
+                    raise ValueError("Resource is claimed by multiple sites")
+                resources.add(resource)
+            if site_id == selected.site_id:
+                selected_found = True
+                if (
+                    domain != selected.domain
+                    or record["backend"] != selected.backend
+                    or owned != selected.resources
+                    or record.get("state") != selected.state
+                ):
+                    raise ValueError("Selected site inventory changed during review")
+        if not selected_found:
+            raise ValueError("Selected site missing from complete inventory")
+
+        jobs = self.inventory.jobs()
+        if not isinstance(jobs, (list, tuple)) or len(jobs) > 10000:
+            raise ValueError("Complete operation journal required")
+        for job in jobs:
+            if not isinstance(job, dict) or job.get("state") not in (
+                "succeeded", "cancelled"
+            ):
+                raise ValueError("Unfinished or ambiguous site operation requires review")
 
     def plan_backup(self, site_id):
         site = self._site(site_id)
