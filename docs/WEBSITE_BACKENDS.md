@@ -178,9 +178,13 @@ A trusted server-side ownership inventory must supply the site ID, canonical
 domain, backend, health state and exact owned resources. A restore additionally
 requires a server-retrieved versioned backup manifest with the same site ID,
 domain, backend and resource inventory, a bounded archive size, a SHA-256
-checksum field and a UTC timestamp. Cross-site or ambiguous ownership, unknown
-manifest fields, invalid metadata and unhealthy/partially installed sites fail
-closed. The review plan includes an explicit target-site confirmation and is
+checksum field and a UTC timestamp. The trusted adapter must also provide a
+**complete site inventory and operation journal** (`sites()` and `jobs()`).
+Planning refuses duplicate site IDs, domains, resource claims, a selected-site
+snapshot mismatch, missing inventory, and unfinished or ambiguous jobs. These
+read-only checks are not locks and must be repeated atomically by any future
+executor. Cross-site or ambiguous ownership, unknown manifest fields, invalid
+metadata and unhealthy/partially installed sites fail closed. The review plan includes an explicit target-site confirmation and is
 always marked `executable: false`. Both execution entrypoints raise
 `WebsiteOperationUnavailable` unconditionally.
 
