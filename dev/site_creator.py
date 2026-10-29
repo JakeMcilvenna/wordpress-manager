@@ -17,7 +17,7 @@ MAX_RESPONSE = 16 * 1024
 MAX_TITLE = 70
 
 
-def validate_fields(title, email, php="8.5"):
+def validate_fields(title, email, domain, php="8.5"):
     if not isinstance(title, str) or not (1 <= len(title.strip()) <= MAX_TITLE):
         raise ValueError("Provide a website name between 1 and 70 characters")
     title = title.strip()
@@ -27,9 +27,22 @@ def validate_fields(title, email, php="8.5"):
         r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,24}", email
     ):
         raise ValueError("Provide a valid local test administrator email")
+    if not isinstance(domain, str):
+        raise ValueError("Provide a valid domain name")
+    domain = domain.lower().strip().rstrip(".")
+    if len(domain) > 253 or len(domain) < 4 or "." not in domain:
+        raise ValueError("Provide a complete domain such as client-example.test")
+    labels = domain.split(".")
+    if any(not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
+           for label in labels):
+        raise ValueError("Domain labels must contain only letters, numbers and interior hyphens")
+    if not re.fullmatch(r"[a-z]{2,24}", labels[-1]):
+        raise ValueError("The domain must end in a valid alphabetic suffix")
+    if domain in ("localhost", "example.com", "example.org", "example.net") or domain.endswith(".localhost"):
+        raise ValueError("Choose a domain reserved for this development website")
     if php != "8.5":
         raise ValueError("Only PHP 8.5 is provisioned in this first Docker site slot")
-    return {"title": title, "email": email, "php": "8.5",
+    return {"title": title, "email": email, "domain": domain, "php": "8.5",
             "site_id": SITE_ID, "url": PUBLIC_URL + "/"}
 
 
@@ -78,8 +91,8 @@ class LocalSiteProvisioner:
 
     def install(self, plan):
         # Do not send any request-controlled command, URL, database name or path.
-        details = validate_fields(plan["title"], plan["email"], plan["php"])
-        return self.call("install", {"title": details["title"], "email": details["email"]})
+        details = validate_fields(plan["title"], plan["email"], plan["domain"], plan["php"])
+        return self.call("install", {"title": details["title"], "email": details["email"], "domain": details["domain"]})
 
 
 def created_site(status):
@@ -92,8 +105,12 @@ def created_site(status):
         return None
     if not isinstance(version, str) or not re.fullmatch(r"\d+\.\d+(?:\.\d+)?", version):
         return None
+    domain = status.get("domain")
+    if not isinstance(domain, str) or len(domain) > 253:
+        domain = "Not recorded"
     return {
         "id": SITE_ID, "name": title, "version": version, "state": "healthy",
+        "domain": domain,
         "url": PUBLIC_URL + "/", "admin_url": PUBLIC_URL + "/wp-admin/",
         "source": "Dedicated Docker WordPress installation",
     }
