@@ -12,6 +12,7 @@ production-specific listener/TLS policies have been implemented.
 """
 import fcntl
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -19,9 +20,31 @@ import pwd
 import re
 import secrets
 import subprocess
+import sys
 import tempfile
 
-from wordpress_manager.site_operations import WebsitePlan, WebsiteSpec, WebsiteOperationUnavailable
+# The restricted Ubuntu executor uses *system Python*, intentionally without
+# Flask. Loading this single stdlib-only shared contract by its reviewed file
+# path avoids importing wordpress_manager.__init__ (which imports Flask).
+# Reuse the ordinary package module when already imported by unit tests.
+def _load_site_contract():
+    module = sys.modules.get("wordpress_manager.site_operations")
+    if module is not None:
+        return module
+    source = Path(__file__).resolve().parents[1] / "wordpress_manager" / "site_operations.py"
+    spec = importlib.util.spec_from_file_location("_wm_native_site_contract", source)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Shared website contract is unavailable")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # dataclasses resolves the declaring module.
+    spec.loader.exec_module(module)
+    return module
+
+_site_contract = _load_site_contract()
+WebsitePlan = _site_contract.WebsitePlan
+WebsiteSpec = _site_contract.WebsiteSpec
+WebsiteService = _site_contract.WebsiteService
+WebsiteOperationUnavailable = _site_contract.WebsiteOperationUnavailable
 
 DISPOSABLE_MARKER = Path("/run/wm-disposable-test")
 DISPOSABLE_TEXT = "disposable Ubuntu deployment test\n"
