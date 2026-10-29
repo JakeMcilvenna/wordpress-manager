@@ -13,7 +13,9 @@ from flask import abort, redirect, render_template, request, session, url_for
 from wordpress_manager import create_app
 from dev.stack_discovery import DockerStackCollector
 from dev.site_registry import SiteRegistry, SITE_ID
-from dev.site_creator import LocalSiteProvisioner, validate_fields, created_site
+from dev.site_creator import LocalSiteProvisioner, created_site
+from dev.docker_sites import DockerWebsiteBackend
+from wordpress_manager.site_operations import WebsiteService
 
 
 class PreviewController:
@@ -114,12 +116,14 @@ def create_preview_app(*, password=None, secret_key=None, observer=None, registr
     site_creator = site_provisioner or LocalSiteProvisioner(
         os.environ.get("WM_DEV_BROKER_TOKEN", "")
     )
+    site_service = WebsiteService(DockerWebsiteBackend(site_creator))
+    app.extensions["website_service"] = site_service
 
     def second_site_status():
         if os.environ.get("WM_DEV_SECOND_SITE_ENABLED") != "1":
             return {"ready": False, "installed": False}
         try:
-            return site_creator.status()
+            return site_service.inspect()
         except (OSError, ValueError, RuntimeError):
             return {"ready": False, "installed": False}
 
@@ -133,12 +137,14 @@ def create_preview_app(*, password=None, secret_key=None, observer=None, registr
     def preview_labels():
         enabled = bool(os.environ.get("WM_DEV_WORDPRESS_INTERNAL_URL"))
         snapshot = app.extensions["collector"].snapshot() if enabled else {}
-        second_site = created_site(second_site_status())
+        try:
+            managed_sites = site_service.list_sites() if os.environ.get("WM_DEV_SECOND_SITE_ENABLED") == "1" else []
+        except (OSError, ValueError, RuntimeError):
+            managed_sites = []
         return {
             "dev_preview": True,
             "dev_stack_enabled": enabled,
-            "dev_sites": list(snapshot.get("dev_sites", [])) +
-                         ([second_site] if second_site else []),
+            "dev_sites": list(snapshot.get("dev_sites", [])) + managed_sites,
             "dev_site_registered": registry.is_registered() if enabled else False,
             "dev_can_create_site": os.environ.get("WM_DEV_SECOND_SITE_ENABLED") == "1",
         }
@@ -188,7 +194,7 @@ def create_preview_app(*, password=None, secret_key=None, observer=None, registr
                     error = "The local second-site slot is already installed."
                 else:
                     try:
-                        plan = validate_fields(
+                        plan = site_service.plan(
                             request.form.get("title", ""),
                             request.form.get("email", ""),
                             request.form.get("domain", ""),
@@ -199,17 +205,12 @@ def create_preview_app(*, password=None, secret_key=None, observer=None, registr
                         error = str(exc)
                         plan = None
             elif action == "create":
-                if request.form.get("confirmation") != "CREATE LOCAL SITE" or not plan:
-                    error = "Review the plan and type CREATE LOCAL SITE to approve."
-                elif current.get("installed"):
-                    error = "This local site has already been installed."
-                else:
-                    try:
-                        result = site_creator.install(plan)
-                        session.pop("wm_site_creation_plan", None)
-                        plan = None
-                    except (ValueError, RuntimeError) as exc:
-                        error = str(exc)
+                try:
+                    result = site_service.create(plan, request.form.get("confirmation", ""))
+                    session.pop("wm_site_creation_plan", None)
+                    plan = None
+                except (ValueError, RuntimeError) as exc:
+                    error = str(exc)
             else:
                 abort(400)
         return render_template(
