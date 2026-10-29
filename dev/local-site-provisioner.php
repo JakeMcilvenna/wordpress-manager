@@ -70,10 +70,12 @@ if ($path === '/status') {
     }
     $title = wp_cli(['option', 'get', 'blogname', '--quiet']);
     $version = wp_cli(['core', 'version', '--quiet']);
+    $domain = wp_cli(['option', 'get', 'wm_intended_domain', '--quiet']);
     reply(200, [
         'ready' => true, 'installed' => true,
-        'title' => is_string($title) ? mb_substr($title, 0, 70) : 'Second local site',
+        'title' => is_string($title) ? substr($title, 0, 70) : 'Second local site',
         'version' => is_string($version) ? $version : '',
+        'domain' => is_string($domain) ? $domain : 'Not recorded',
     ]);
 }
 
@@ -93,6 +95,12 @@ if (!is_array($input)) {
 }
 $title = $input['title'] ?? null;
 $email = $input['email'] ?? null;
+$domain = $input['domain'] ?? null;
+if (!is_string($domain) || strlen($domain) > 253 ||
+    !preg_match('/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,24}$/D', $domain) ||
+    str_ends_with($domain, '.localhost')) {
+    reply(400, ['error' => 'Invalid domain']);
+}
 if (!is_string($title) || strlen($title) < 1 || strlen($title) > 70 ||
     trim($title) !== $title || preg_match('/[\x00-\x1f\x7f]/', $title)) {
     reply(400, ['error' => 'Invalid title']);
@@ -114,8 +122,23 @@ $result = wp_cli([
 if ($result === false) {
     reply(503, ['error' => 'Installation failed. Inspect the local provisioner container.']);
 }
+// Persist the *intended* deployment domain as site metadata only. WordPress
+// remains configured for the local preview URL so browser login works without
+// DNS or hosts-file changes.
+$stored = wp_cli(['option', 'update', 'wm_intended_domain', $domain, '--autoload=no']);
+if ($stored === false) {
+    // WordPress is installed even if optional metadata could not be stored.
+    reply(200, [
+        'installed' => true, 'url' => 'http://127.0.0.1:8092/',
+        'admin_url' => 'http://127.0.0.1:8092/wp-admin/',
+        'username' => 'admin', 'password' => $password,
+        'domain' => 'Not recorded',
+        'warning' => 'WordPress installed, but the intended domain was not saved.',
+    ]);
+}
 reply(200, [
     'installed' => true, 'url' => 'http://127.0.0.1:8092/',
     'admin_url' => 'http://127.0.0.1:8092/wp-admin/',
     'username' => 'admin', 'password' => $password,
+    'domain' => $domain,
 ]);
