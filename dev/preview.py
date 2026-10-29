@@ -177,6 +177,9 @@ def create_preview_app(*, password=None, secret_key=None, observer=None, registr
         current = second_site_status()
         error = None
         plan = session.get("wm_site_creation_plan")
+        if request.method == "GET" and request.args.get("edit") == "1":
+            session.pop("wm_site_creation_plan", None)
+            plan = None
         result = None
         if request.method == "POST":
             action = request.form.get("action")
