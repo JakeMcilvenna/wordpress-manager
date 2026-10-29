@@ -145,6 +145,71 @@ docker compose -f compose.preview.yml -f compose.stack.yml up -d --build --force
 The Overview service-running count now includes only monitored service
 rows, excluding the non-service PHP runtime row.
 
+## Create a real additional WordPress site (development milestone)
+
+Open **WordPress Manager → Websites → Create WordPress website** at
+http://127.0.0.1:8090. This milestone creates **one** additional installation
+at **http://127.0.0.1:8092** in a dedicated Docker WordPress PHP 8.5-FPM
+container, Nginx container, MariaDB 10.11 container, and completely separate
+WordPress files/database named volumes. It does **not** alter the original
+test WordPress installation on http://127.0.0.1:8091.
+
+The wizard requires:
+
+- A website name.
+- An **intended domain**, such as `client-example.test` (ASCII DNS name).
+- PHP 8.5 (the only PHP version configured for this first local site slot).
+- A development-only WordPress administrator email.
+
+**Domain vs local preview:** WordPress itself is installed with a local site
+URL of http://127.0.0.1:8092. The intended domain is saved as
+`wm_intended_domain` in the dedicated test WordPress database for later
+hosting development. Docker does not modify your Windows hosts file, public
+DNS, production Nginx or TLS. Entering a real public domain is not sufficient
+to make that domain point to your local site.
+
+Review the installation plan, then type `CREATE LOCAL SITE` and approve.
+The dedicated internal provisioner invokes WP-CLI against **only the second
+site volume/database**. The generated WordPress administrator password is
+displayed **once** on the confirmation screen; copy it before navigating away.
+No WordPress installation email is sent. The manager login password remains
+`preview-only` and is unrelated to the new WordPress administrator password.
+
+The created WordPress site automatically appears on the Websites list after
+installation. It cannot be recreated or overwritten from the dashboard. The
+installation service is an internal-only Compose service at port 8093 (there
+is no published host port); the unprivileged Flask dashboard has no Docker
+socket, arbitrary shell runner or mounted website data.
+
+### Running or updating locally
+
+In Windows PowerShell, from the repository root:
+
+```powershell
+git switch main
+git pull --ff-only
+docker compose -f compose.preview.yml -f compose.stack.yml config -q
+docker compose -f compose.preview.yml -f compose.stack.yml up -d --build
+docker compose -f compose.preview.yml -f compose.stack.yml ps
+```
+
+If creation fails, inspect only the **local Docker container** logs:
+
+```powershell
+docker compose -f compose.preview.yml -f compose.stack.yml logs --tail=100 site2-provisioner site2-wordpress site2-database site2-nginx
+```
+
+Never share installation-generated WordPress administrator passwords or
+private token values from log output.
+
+This is a deliberately constrained first vertical slice, **not** general
+multi-domain VPS provisioning. It does not support creating third/fourth sites,
+choosing arbitrary PHP versions, modifying public DNS, obtaining TLS
+certificates, production Linux-account boundaries or removing sites. The next
+milestone will generalise the separate-site provisioning engine after runtime
+testing confirms that the existing test site's files and database remain
+unchanged.
+
 ## Stop, reset and limits
 
 ```powershell
