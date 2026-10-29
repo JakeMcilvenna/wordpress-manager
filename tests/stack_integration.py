@@ -82,6 +82,10 @@ def main():
         assert state == 'succeeded', detail
         assert ledger.execute("SELECT count(*) FROM audit WHERE action='job-approved'").fetchone()[0] == 1
     print('PASS: authenticated dashboard plan/confirm/job workflow', flush=True)
+    # Native site executor runs only with the disposable guest marker. Exercise
+    # the actual Ubuntu Nginx/FPM/MariaDB/WP-CLI pathway after stack setup and
+    # before uninstall/rollback preservation snapshots, never on Hetzner.
+    run('/usr/bin/python3', REPO / 'tests/native_site_integration.py', '--disposable-system')
     assert hashlib.sha256(sentinel.read_bytes()).hexdigest() == original
     assert '127.0.0.1:8081' in run('ss', '-H', '-ltn', '( sport = :8081 )')
     assert '0.0.0.0:8081' not in run('ss', '-H', '-ltn', '( sport = :8081 )')
