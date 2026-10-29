@@ -16,7 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 from deploy import ubuntu_site_executor as native  # noqa: E402
-from wordpress_manager.site_operations import WebsiteService  # noqa: E402
+WebsiteService = native.WebsiteService  # shared stdlib-only contract, no Flask dependency
 
 def check_site(domain):
     connection = http.client.HTTPConnection("127.0.0.1", native.PORT, timeout=10)
