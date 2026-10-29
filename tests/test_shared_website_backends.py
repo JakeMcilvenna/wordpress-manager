@@ -82,7 +82,7 @@ def test_docker_backend_obeys_shared_plan_and_creates_only_once():
     assert len(service.list_sites()) == 1
     with pytest.raises(ValueError, match="already been installed"):
         service.create(plan, "CREATE LOCAL SITE")
-    with pytest.raises(ValueError, match="already been installed"):
+    with pytest.raises(ValueError, match="already installed"):
         service.plan("Again", "admin@again.test", "again.test", "8.5")
     assert len(fake.calls) == 1
 
