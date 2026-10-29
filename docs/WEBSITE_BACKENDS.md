@@ -145,6 +145,19 @@ site ownership and duplicate-domain checks, backup and rollback, site
 credentials handling, TLS and full VPS audit. Never add a shortcut that
 invokes the disposable test helper from Flask or weakens its guest-only guard.
 
+## Disposable authenticated site protocol
+
+The development-only root provisioner now recognises site-plan, site-apply,
+site-status and site-result. Only the disposable Ubuntu integration guest can
+use these operations; every call rechecks the native executor guard.
+Requests use the existing authenticated Unix socket. Server-created site
+plans belong to one session and can be applied once with explicit approval.
+Job status does not expose credentials. Unfinished jobs need manual review.
+
+This protocol is not enabled through the production dashboard.
+The UbuntuWebsiteBackend stays unavailable until independently reviewed
+production safeguards, backups and recovery tests are complete.
+
 ## Acceptance gate for the next multi-site milestone
 
 1. The common model and validation cover duplicates, site identity, owned
