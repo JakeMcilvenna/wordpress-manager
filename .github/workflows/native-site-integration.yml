@@ -16,6 +16,12 @@ on:
 permissions:
   contents: read
 
+# Native stack tests install real services and take several minutes. Drop
+# superseded runs for this PR, but do not cancel an unrelated PR's test.
+concurrency:
+  group: native-site-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   disposable-ubuntu-site:
     name: Native WordPress site in disposable Ubuntu 24.04
