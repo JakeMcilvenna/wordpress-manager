@@ -10,6 +10,7 @@ on:
     paths:
       - ".github/workflows/native-site-integration.yml"
       - "deploy/ubuntu_site_executor.py"
+      - "wordpress_manager/site_operations.py"
       - "tests/native_site_integration.py"
       - "tests/stack_integration.py"
 
