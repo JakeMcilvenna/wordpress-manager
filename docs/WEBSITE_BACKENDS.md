@@ -60,6 +60,16 @@ server side, enforce per-site UNIX/PHP-FPM isolation, generate and securely
 store MariaDB credentials, check domain conflicts and atomic Nginx
 configuration, and journal operations with rollback on failure.
 
+## Shared planning with multiple identities
+
+WebsiteService now checks the selected backend's actual managed-site inventory,
+rather than refusing every new plan whenever any site exists. Unique site IDs
+and canonical domains must not collide. Inconsistent inventories fail closed.
+
+This does not add dynamic Docker slots: the current local provisioner still
+owns one fixed site ID and prevents additional installations. The native
+disposable adapter can use distinct site IDs. Production remains disabled.
+
 ## Shared lifecycle data model
 
 - **Spec** — canonical `title`, `domain`, `email` and `php`.
