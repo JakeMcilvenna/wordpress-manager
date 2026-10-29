@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+{% from 'macros.html' import status with context %}
+{% block content %}
+<div class="page-heading"><div><h1>{{ site.name }}</h1><p>Created with WordPress Manager's isolated local Docker installer.</p></div>
+<a class="button" href="{{ url_for('page', name='websites') }}">Back to websites</a></div>
+<section class="panel">
+  <div class="panel-heading"><div><h2>Created WordPress website</h2><p>This website has its own PHP-FPM process, WordPress files and MariaDB database.</p></div><span class="tag">Local development</span></div>
+  <div class="table-scroll" tabindex="0" role="region" aria-label="Created WordPress website">
+    <table><tbody>
+      <tr><th scope="row">Website name</th><td>{{ site.name }}</td></tr>
+      <tr><th scope="row">Intended domain</th><td>{{ site.domain }} <span class="cell-caption">Not configured in DNS; for future production routing</span></td></tr>
+      <tr><th scope="row">Local preview</th><td><a class="text-link" href="{{ site.url }}" target="_blank" rel="noopener noreferrer">{{ site.url }}</a></td></tr>
+      <tr><th scope="row">Admin dashboard</th><td><a class="text-link" href="{{ site.admin_url }}" target="_blank" rel="noopener noreferrer">Open WordPress admin</a></td></tr>
+      <tr><th scope="row">WordPress version</th><td class="version">{{ site.version }}</td></tr>
+      <tr><th scope="row">Install status</th><td>{{ status(site.state) }}</td></tr>
+    </tbody></table>
+  </div>
+</section>
+<p class="muted">One dedicated local installation slot. No uninstall or deletion action is available yet. Docker volumes are preserved between normal container restarts.</p>
+{% endblock %}
