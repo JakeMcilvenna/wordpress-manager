@@ -52,7 +52,8 @@ def create_app(config=None, collector=None):
                 app.config.get("AUTH_ENABLED") and request.method == "POST"
                 and (request.endpoint in ("login", "logout", "stack_control")
                      or (app.config.get("DEV_PREVIEW") is True and
-                         request.endpoint in ("dev_register_site", "dev_unregister_site")))):
+                         request.endpoint in ("dev_register_site", "dev_unregister_site",
+                                              "dev_create_site")))):
             abort(405)
 
     from .control import attach

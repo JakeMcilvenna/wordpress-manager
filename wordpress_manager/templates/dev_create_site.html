@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-heading">
+  <div><h1>Create WordPress website</h1><p>Create a real, isolated second WordPress site in local Docker.</p></div>
+  <a class="button" href="{{ url_for('page', name='websites') }}">Back to websites</a>
+</div>
+<div class="notice warning" role="status"><p><strong>Development-only installer.</strong> The first release supports one additional site on <strong>http://127.0.0.1:8092</strong>. Your existing test site at port 8091 will not be modified. No public DNS or Hetzner configuration is changed.</p></div>
+{% if error %}<p class="notice warning" role="alert">{{ error }}</p>{% endif %}
+{% if result and result.installed %}
+<section class="panel">
+  <div class="panel-heading"><h2>WordPress installed successfully</h2><span class="tag">Local site created</span></div>
+  <div class="control-form">
+    <p><strong>Preview:</strong> <a class="text-link" href="{{ result.url }}" target="_blank" rel="noopener noreferrer">{{ result.url }}</a></p>
+    <p><strong>WordPress admin:</strong> <a class="text-link" href="{{ result.admin_url }}" target="_blank" rel="noopener noreferrer">{{ result.admin_url }}</a></p>
+    <p><strong>Intended domain:</strong> {{ result.domain }}</p>
+    <p><strong>Administrator username:</strong> {{ result.username }}</p>
+    <p><strong>Administrator password:</strong> <code>{{ result.password }}</code></p>
+    <p class="muted"><strong>Copy the password now.</strong> It is displayed only on this confirmation screen. It is not stored in WordPress Manager's session or registry.</p>
+    {% if result.warning %}<p class="notice warning">{{ result.warning }}</p>{% endif %}
+    <a class="button" href="{{ url_for('page', name='websites') }}">View websites</a>
+  </div>
+</section>
+{% elif current.installed %}
+<section class="panel"><div class="panel-heading"><h2>Additional WordPress site already installed</h2><span class="tag">One-site development slot</span></div>
+<div class="control-form"><p>The dedicated second-site Docker installation already exists. This release will not overwrite or reset it.</p>
+<a class="button" href="{{ url_for('dev_created_site_details') }}">View created site</a></div></section>
+{% elif plan %}
+<section class="panel">
+  <div class="panel-heading"><div><h2>Review installation plan</h2><p>Confirm the exact changes before proceeding.</p></div><span class="tag">Approval required</span></div>
+  <div class="table-scroll" role="region" aria-label="New website installation plan" tabindex="0">
+    <table><tbody>
+      <tr><th scope="row">Website name</th><td>{{ plan.title }}</td></tr>
+      <tr><th scope="row">Intended domain</th><td>{{ plan.domain }} <span class="cell-caption">Metadata only until DNS and production hosting are configured</span></td></tr>
+      <tr><th scope="row">Local preview address</th><td>{{ plan.url }}</td></tr>
+      <tr><th scope="row">PHP</th><td>{{ plan.php }} (separate PHP-FPM container)</td></tr>
+      <tr><th scope="row">Admin username</th><td>admin</td></tr>
+      <tr><th scope="row">Admin email</th><td>{{ plan.email }}</td></tr>
+      <tr><th scope="row">Database</th><td>Dedicated MariaDB 10.11 database and volume</td></tr>
+      <tr><th scope="row">Website files</th><td>Separate WordPress files volume</td></tr>
+    </tbody></table>
+  </div>
+  <div class="control-form">
+    <p>Type <strong>CREATE LOCAL SITE</strong> to approve installation. A random administrator password will be displayed once after installation.</p>
+    <form method="post" action="{{ url_for('dev_create_site') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="create">
+      <label for="confirmation">Approval phrase</label>
+      <input id="confirmation" name="confirmation" type="text" autocomplete="off" required placeholder="CREATE LOCAL SITE">
+      <button class="button" type="submit">Create local WordPress website</button>
+    </form>
+    <a class="text-link" href="{{ url_for('dev_create_site', edit=1) }}">Edit the plan</a>
+  </div>
+</section>
+{% else %}
+<section class="panel">
+  <div class="panel-heading"><div><h2>Website settings</h2><p>Choose the details for your additional local WordPress installation.</p></div><span class="tag">Step 1 of 2</span></div>
+  <div class="control-form">
+    <form method="post" action="{{ url_for('dev_create_site') }}">
+      <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+      <input type="hidden" name="action" value="plan">
+      <label for="site-title">Website name</label>
+      <input id="site-title" name="title" type="text" maxlength="70" minlength="1" placeholder="Client development site" required>
+      <label for="site-domain">Domain name</label>
+      <input id="site-domain" name="domain" type="text" maxlength="253" placeholder="client-example.test" autocapitalize="none" spellcheck="false" required>
+      <p class="muted">This is the intended domain for future hosting. The local site will remain accessible at http://127.0.0.1:8092, without changing your hosts file or public DNS.</p>
+      <label for="site-php">PHP version</label>
+      <select id="site-php" name="php"><option value="8.5" selected>PHP 8.5 (available in this Docker stack)</option></select>
+      <label for="site-email">Development administrator email</label>
+      <input id="site-email" name="email" type="email" maxlength="120" placeholder="admin@client-example.test" required>
+      <p class="muted">WordPress will create an administrator named <strong>admin</strong> and generate a strong password. No installation email will be sent.</p>
+      <button class="button" type="submit">Review installation plan</button>
+    </form>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

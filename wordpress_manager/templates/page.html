@@ -12,15 +12,17 @@
 <section class="plain-section"><h2>Install missing components</h2><div class="checklist"><p>{{ icon('check') }} Review the detected stack and preserve the existing PHP version.</p><p>{{ icon('check') }} Take a VPS snapshot and verify a restore path.</p><p>{{ icon('lock') }} Approve a specific package plan before the separate provisioning service runs it.</p></div>{% if control_enabled %}<a class="button" href="{{ url_for('stack_control') }}">Preview installation plan {{ icon('arrow') }}</a>{% else %}<p class="muted">Stack installation is disabled. The administrator can enable it during panel installation. Missing detection can mean an alternative installation path or insufficient permissions.</p>{% endif %}</section>
 {% elif active == 'websites' and dev_preview|default(false) %}
 <section class="panel">
-  <div class="panel-heading"><div><h2>Discovered local WordPress sites</h2><p>Live Docker discovery and local-only website registration. No changes to WordPress files or databases.</p></div><span class="tag">Development only</span></div>
+  <div class="panel-heading"><div><h2>Local WordPress sites</h2><p>Discover, register and create websites inside the isolated Docker stack.</p></div><span class="tag">Development only</span></div>
+  {% if dev_can_create_site %}<div class="control-form"><a class="button" href="{{ url_for('dev_create_site') }}">Create WordPress website</a><p class="muted">First version: one additional site with its own PHP, MariaDB database and files volume.</p></div>{% endif %}
   {% if dev_sites %}
     <div class="table-scroll" tabindex="0" role="region" aria-label="Discovered local WordPress sites">
       <table><thead><tr><th scope="col">Website</th><th scope="col">WordPress version</th><th scope="col">Health</th><th scope="col">Actions</th></tr></thead><tbody>
       {% for site in dev_sites %}<tr>
         <td><strong>{{ site.name }}</strong><span class="cell-caption">{{ site.url }}</span></td>
         <td class="version">{{ site.version }}</td><td>{{ status(site.state) }}</td>
-        <td><a class="text-link" href="{{ url_for('dev_site_details') }}">View details</a> · <a class="text-link" href="{{ site.url }}" target="_blank" rel="noopener noreferrer">Visit site</a> · <a class="text-link" href="{{ site.admin_url }}" target="_blank" rel="noopener noreferrer">WordPress admin</a>
-        {% if dev_site_registered %}<span class="cell-caption">Registered for local monitoring</span>
+        <td><a class="text-link" href="{{ url_for('dev_created_site_details') if site.id|default('') == 'local-second-site' else url_for('dev_site_details') }}">View details</a> · <a class="text-link" href="{{ site.url }}" target="_blank" rel="noopener noreferrer">Visit site</a> · <a class="text-link" href="{{ site.admin_url }}" target="_blank" rel="noopener noreferrer">WordPress admin</a>
+        {% if site.id|default('') == 'local-second-site' %}<span class="cell-caption">Created in isolated local Docker slot{% if site.domain %} · Intended domain: {{ site.domain }}{% endif %}</span>
+        {% elif dev_site_registered %}<span class="cell-caption">Registered for local monitoring</span>
         {% else %}<form method="post" action="{{ url_for('dev_register_site') }}"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><button class="button" type="submit">Register for monitoring</button></form>{% endif %}
         </td>
       </tr>{% endfor %}
@@ -31,7 +33,7 @@
   {% endif %}
   <p class="panel-footnote">No site files, database contents or configurations are changed during discovery.</p>
 </section>
-<section class="plain-section"><h2>Next feature: website management</h2><p>Registration stores only local monitoring metadata. Plugin activation, site creation and modification need a separately tested, restricted backend.</p></section>
+<section class="plain-section"><h2>Development limitations</h2><p>Site creation is limited to one additional isolated Docker website. Domain names are stored as intended deployment metadata; local previews use fixed localhost ports. Additional sites, public DNS, TLS and production provisioning are not yet supported.</p></section>
 {% elif active in ['websites', 'staging', 'backups'] %}
 <section class="panel empty-state"><span class="empty-icon">{{ icon(active) }}</span>
 {% if active == 'websites' %}<h2>No managed websites yet</h2><p>This release does not register or provision sites. Existing sites on the server are not automatically imported.</p><a class="button" href="{{ url_for('page', name='setup') }}">Review server readiness {{ icon('arrow') }}</a>
