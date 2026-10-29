@@ -31,12 +31,18 @@ MANIFEST = {
 
 class Ledger:
     def __init__(self):
-        self.sites = {item["site_id"]: deepcopy(item) for item in (SITE, OTHER)}
+        self.site_records = {item["site_id"]: deepcopy(item) for item in (SITE, OTHER)}
         self.backups = {BACKUP_ID: deepcopy(MANIFEST)}
         self.writes = 0
 
     def site(self, site_id):
-        return deepcopy(self.sites.get(site_id))
+        return deepcopy(self.site_records.get(site_id))
+
+    def sites(self):
+        return [deepcopy(record) for record in self.site_records.values()]
+
+    def jobs(self):
+        return []
 
     def backup(self, backup_id):
         return deepcopy(self.backups.get(backup_id))
@@ -135,7 +141,7 @@ def test_manifest_rejects_unknown_fields_and_never_trusts_archive_paths():
 ])
 def test_unhealthy_or_ambiguous_site_ownership_blocks_backup_and_restore(changed):
     ledger = Ledger()
-    ledger.sites[SITE["site_id"]].update(changed)
+    ledger.site_records[SITE["site_id"]].update(changed)
     planner = BackupPlanner(ledger)
     with pytest.raises(ValueError):
         planner.plan_backup(SITE["site_id"])
@@ -240,3 +246,66 @@ def test_invalid_archive_metadata_rejected_before_any_stream_read():
 
     with pytest.raises(ValueError, match="size"):
         verify_archive_stream(manifest, NeverRead())
+
+
+def test_backup_and_restore_reject_cross_site_resource_or_domain_claims():
+    ledger = Ledger()
+    ledger.site_records[OTHER["site_id"]]["resources"].append(SITE["resources"][0])
+    planner = BackupPlanner(ledger)
+    with pytest.raises(ValueError, match="Resource"):
+        planner.plan_backup(SITE["site_id"])
+    with pytest.raises(ValueError, match="Resource"):
+        planner.plan_restore(SITE["site_id"], BACKUP_ID)
+
+    ledger = Ledger()
+    ledger.site_records[OTHER["site_id"]]["domain"] = SITE["domain"]
+    with pytest.raises(ValueError, match="domain"):
+        BackupPlanner(ledger).plan_backup(SITE["site_id"])
+
+
+def test_backup_and_restore_require_complete_consistent_site_snapshot():
+    ledger = Ledger()
+    planner = BackupPlanner(ledger)
+    ledger.sites = lambda: [deepcopy(OTHER)]
+    with pytest.raises(ValueError, match="missing"):
+        planner.plan_backup(SITE["site_id"])
+    with pytest.raises(ValueError, match="missing"):
+        planner.plan_restore(SITE["site_id"], BACKUP_ID)
+
+    ledger = Ledger()
+    ledger.sites = lambda: [deepcopy(SITE), deepcopy(SITE)]
+    with pytest.raises(ValueError, match="Ambiguous"):
+        BackupPlanner(ledger).plan_backup(SITE["site_id"])
+
+    ledger = Ledger()
+    ledger.sites = lambda: None
+    with pytest.raises(ValueError, match="Complete"):
+        BackupPlanner(ledger).plan_backup(SITE["site_id"])
+
+    ledger = Ledger()
+    ledger.sites = lambda: [dict(SITE, resources=["different-resource"]), deepcopy(OTHER)]
+    with pytest.raises(ValueError, match="changed"):
+        BackupPlanner(ledger).plan_restore(SITE["site_id"], BACKUP_ID)
+
+
+@pytest.mark.parametrize("jobs", [
+    None, [None], [{"state": "running"}], [{"state": "failed"}],
+    [{"state": "queued"}], [{"state": "interrupted"}],
+])
+def test_backup_and_restore_refuse_unfinished_or_ambiguous_jobs(jobs):
+    ledger = Ledger()
+    ledger.jobs = lambda: jobs
+    planner = BackupPlanner(ledger)
+    with pytest.raises(ValueError, match="journal|operation"):
+        planner.plan_backup(SITE["site_id"])
+    with pytest.raises(ValueError, match="journal|operation"):
+        planner.plan_restore(SITE["site_id"], BACKUP_ID)
+
+
+def test_completed_operation_journal_is_accepted_without_enabling_writes():
+    ledger = Ledger()
+    ledger.jobs = lambda: [{"state": "succeeded"}, {"state": "cancelled"}]
+    planner = BackupPlanner(ledger)
+    assert planner.plan_backup(SITE["site_id"])["executable"] is False
+    assert planner.plan_restore(SITE["site_id"], BACKUP_ID)["executable"] is False
+    assert ledger.writes == 0
