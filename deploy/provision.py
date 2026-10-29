@@ -384,6 +384,13 @@ def execute(plan):
             fd = os.open("/usr/local/bin/wp", os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o755)
             with os.fdopen(fd, "wb") as handle:
                 handle.write(downloads["wpcli"])
+                handle.flush()
+                os.fsync(handle.fileno())
+                # The restricted service has UMask=0077. Explicitly grant
+                # execute permission to dedicated unprivileged site users,
+                # otherwise WP-CLI is created mode 0700 and WordPress cannot
+                # be provisioned under a site's own Linux identity.
+                os.fchmod(handle.fileno(), 0o755)
         for package, service in (("mariadb-server", "mariadb"), ("nginx", "nginx"),
                                   (f"php{plan['php']}-fpm", f"php{plan['php']}-fpm")):
             if package in plan["packages"]:
