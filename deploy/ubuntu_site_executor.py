@@ -48,6 +48,8 @@ def disposable_only():
         raise PermissionError("Native site provisioning is disabled outside the disposable Ubuntu test guest")
     if DISPOSABLE_MARKER.read_text() != DISPOSABLE_TEXT:
         raise PermissionError("Unexpected disposable test guest marker")
+    if not Path("/.dockerenv").is_file():
+        raise PermissionError("Native website executor requires a disposable container, not a VPS host")
     system = Path("/etc/os-release").read_text()
     if not re.search(r'(?m)^ID=ubuntu$', system) or not re.search(r'(?m)^VERSION_ID="?24\.04"?$', system):
         raise PermissionError("Only disposable Ubuntu 24.04 LTS guests are supported")
@@ -286,7 +288,7 @@ def create(plan, confirmation):
             ))
             _run("/usr/sbin/runuser", "-u", user, "--", "/usr/local/bin/wp",
                  "core", "download", f"--version={CORE_VERSION}", "--locale=en_US",
-                 f"--path={paths['site']}", "--skip-content", timeout=240)
+                 f"--path={paths['site']}", timeout=240)
             config = paths["site"] / "wp-config.php"
             _write_exclusive(config, _wordpress_config(database, db_password), 0o640)
             os.chown(config, identity.pw_uid, identity.pw_gid)
