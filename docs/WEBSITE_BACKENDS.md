@@ -1,0 +1,116 @@
+# Website management architecture: one app, two backends
+
+**Non-negotiable target:** WordPress Manager runs **natively on the Hetzner
+Ubuntu 24.04 VPS without Docker**. Docker Desktop is an isolated local
+development/test harness. New functionality must implement one shared
+application contract and have separately verified environment adapters.
+
+## Architectural boundary
+
+```
+Authenticated Flask UI / shared website workflow
+    |
+    +-- wordpress_manager/site_operations.py
+    |      WebsiteSpec: canonical name, email, domain, PHP validation
+    |      WebsitePlan: immutable proposed site ID and owned resources
+    |      WebsiteService: plan integrity, explicit confirmation, no overwrite
+    |      WebsiteBackend: inspect / list / plan / create / suspend / delete
+    |
+    +-- DockerWebsiteBackend [development only]
+    |      dev/docker_sites.py -> dev/site_creator.py
+    |      fixed internal site2-provisioner -> dedicated WP-CLI
+    |      isolated volumes, MariaDB database, PHP-FPM and Nginx
+    |      current local URLs 127.0.0.1:8091 and :8092
+    |
+    +-- UbuntuWebsiteBackend [currently intentionally DISABLED]
+           wordpress_manager/ubuntu_sites.py
+           future: restricted VPS provisioner via Unix socket
+           future: per-site Linux account, PHP-FPM pool, Nginx vhost,
+                   MariaDB database/user, WP-CLI and TLS
+```
+
+The common `WebsiteService` and `WebsiteBackend` contract are importable
+from the production Python package; the existing Docker client remains an
+adapter. The preview's real Create Website form uses `WebsiteService.plan`
+and `WebsiteService.create`, so validation, plan verification and the
+confirmation requirement are not Docker-specific.
+
+### Already implemented on Docker
+
+- Domain/name/email/PHP validation and approval are shared.
+- `DockerWebsiteBackend` uses a dedicated fixed-site container service.
+- Site creation is real and retains isolation and data across Docker restart.
+- Listing and inspection use the site's WP-CLI-backed status.
+- The existing test WordPress website and its database/files are unaffected.
+- Suspend/delete methods exist in the interface but explicitly raise
+  `WebsiteOperationUnavailable`, because there is no safe implementation.
+
+### Explicitly **not** implemented on Ubuntu production
+
+`UbuntuWebsiteBackend` implements the same interface but all methods
+raise `WebsiteOperationUnavailable` deliberately. The live dashboard has
+no website-create routes, and the existing restricted system-stack installer
+does NOT support arbitrary WordPress site writes. Nothing in this architecture
+PR enables site provisioning, suspend or delete on Hetzner.
+
+The planned production adapter must invoke a *new, allowlisted website protocol*
+on the existing restricted control service, not Flask subprocesses or sudo.
+The future policy should verify resource ownership and site IDs on the
+server side, enforce per-site UNIX/PHP-FPM isolation, generate and securely
+store MariaDB credentials, check domain conflicts and atomic Nginx
+configuration, and journal operations with rollback on failure.
+
+## Shared lifecycle data model
+
+- **Spec** — canonical `title`, `domain`, `email` and `php`.
+  Validation occurs before adapter-specific planning. `domain` is an
+  *intended* name locally; browser preview uses a fixed localhost port.
+- **Plan** — site ID and resource ownership manifest, backend identifier,
+  preview URL, and confirmation phrase. This is not an installation command.
+  It is regenerated and checked before mutation, so forged or stale
+  client-supplied resource names cannot change an operation's scope.
+- **Inspect/list** — return only the websites truly controlled by the
+  backend; never imply an unreachable database or service is healthy.
+- **Create** — only after explicit confirmation and installed/ownership
+  checks. Backend performs the platform-specific side effects.
+- **Suspend/delete** — contract reserved but fail closed until resource
+  ownership, backup, undo, locking and staged operation-recovery tests exist.
+
+Do not change this contract to expose Docker API operations, arbitrary bash,
+unvalidated paths/domains or raw system privileges to a web request.
+Use per-site opaque IDs and derive ownership on the trusted executor side.
+
+## Local and production differences
+
+| Concern | Local Docker Desktop | Hetzner Ubuntu 24.04 |
+|---|---|---|
+| App/browser validation | Shared `WebsiteService` | Same shared service |
+| Web server | Dedicated Docker Nginx | Host Nginx virtual hosts |
+| PHP | Docker PHP-FPM | Isolated PHP-FPM pools/users |
+| WordPress | WP-CLI inside site container | WP-CLI under per-site OS identity |
+| MariaDB | Separate Docker volume/database | Per-site database/user on host |
+| Files | Owned Docker site volume | Owned /srv/… directory (policy-defined) |
+| DNS | Intended domain metadata, localhost URL | Validated domain, DNS/TLS workflow |
+| Privileges | Internal restricted local broker | Restricted host control service |
+| CI | Fast tests + disposable Docker | Full disposable Ubuntu integration tests |
+| Implementation | Single-slot Create Website working | Backend **disabled** until validated |
+
+## Acceptance gate for the next multi-site milestone
+
+1. The common model and validation cover duplicates, site identity, owned
+   resources, job states and recovery across both environments.
+2. Docker integration creates at least two independent test sites, proves
+   they survive restarts and shows that one failure cannot change another.
+3. Ubuntu's executor in a **disposable Ubuntu 24.04/systemd** test image
+   creates Nginx config, Linux/PHP-FPM identity, MariaDB database/user,
+   WordPress files and WP-CLI install through the same interface.
+4. Disconnection, duplicate domain, partial install, timeout, failed
+   Nginx config, disk-full and rollback cases are exercised. Never use
+   production Hetzner as a test target.
+5. Site deletion is NOT enabled until backups/recovery and per-resource
+   ownership are proven. Deletion requires typed domain/site confirmation,
+   access checks, immutable audit records and recovery proof.
+6. Only after the complete Ubuntu pathway is verified can a separate
+   production PR expose website operations on the real VPS.
+
+See `AGENTS.md` for rules every future development session must follow.
