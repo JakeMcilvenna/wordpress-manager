@@ -9,10 +9,11 @@ import os
 from pathlib import Path
 import secrets
 
-from flask import abort, redirect, render_template, url_for
+from flask import abort, redirect, render_template, request, session, url_for
 from wordpress_manager import create_app
 from dev.stack_discovery import DockerStackCollector
 from dev.site_registry import SiteRegistry, SITE_ID
+from dev.site_creator import LocalSiteProvisioner, validate_fields, created_site
 
 
 class PreviewController:
@@ -93,7 +94,7 @@ def session_secret(path=None):
     return value
 
 
-def create_preview_app(*, password=None, secret_key=None, observer=None, registry_path=None):
+def create_preview_app(*, password=None, secret_key=None, observer=None, registry_path=None, site_provisioner=None):
     password = password if password is not None else os.environ.get("WM_PREVIEW_PASSWORD", "preview-only")
     if not password:
         raise ValueError("The local preview password cannot be empty")
@@ -110,6 +111,17 @@ def create_preview_app(*, password=None, secret_key=None, observer=None, registr
                             if os.environ.get("WM_DEV_WORDPRESS_INTERNAL_URL") else None))
 
     registry = SiteRegistry(registry_path) if registry_path is not None else SiteRegistry()
+    site_creator = site_provisioner or LocalSiteProvisioner(
+        os.environ.get("WM_DEV_BROKER_TOKEN", "")
+    )
+
+    def second_site_status():
+        if os.environ.get("WM_DEV_SECOND_SITE_ENABLED") != "1":
+            return {"ready": False, "installed": False}
+        try:
+            return site_creator.status()
+        except (OSError, ValueError, RuntimeError):
+            return {"ready": False, "installed": False}
 
     def known_site():
         if not os.environ.get("WM_DEV_WORDPRESS_INTERNAL_URL"):
@@ -121,11 +133,14 @@ def create_preview_app(*, password=None, secret_key=None, observer=None, registr
     def preview_labels():
         enabled = bool(os.environ.get("WM_DEV_WORDPRESS_INTERNAL_URL"))
         snapshot = app.extensions["collector"].snapshot() if enabled else {}
+        second_site = created_site(second_site_status())
         return {
             "dev_preview": True,
             "dev_stack_enabled": enabled,
-            "dev_sites": snapshot.get("dev_sites", []),
+            "dev_sites": list(snapshot.get("dev_sites", [])) +
+                         ([second_site] if second_site else []),
             "dev_site_registered": registry.is_registered() if enabled else False,
+            "dev_can_create_site": os.environ.get("WM_DEV_SECOND_SITE_ENABLED") == "1",
         }
 
     @app.post("/dev/sites/register")
@@ -154,6 +169,58 @@ def create_preview_app(*, password=None, secret_key=None, observer=None, registr
             "dev_site_details.html", title="Website details",
             active="websites", site=site, registered=registry.is_registered(),
         )
+
+    @app.route("/dev/sites/create", methods=["GET", "POST"])
+    def dev_create_site():
+        if os.environ.get("WM_DEV_SECOND_SITE_ENABLED") != "1":
+            abort(404)
+        current = second_site_status()
+        error = None
+        plan = session.get("wm_site_creation_plan")
+        result = None
+        if request.method == "POST":
+            action = request.form.get("action")
+            if action == "plan":
+                if current.get("installed"):
+                    error = "The local second-site slot is already installed."
+                else:
+                    try:
+                        plan = validate_fields(
+                            request.form.get("title", ""),
+                            request.form.get("email", ""),
+                            request.form.get("domain", ""),
+                            request.form.get("php", "8.5"),
+                        )
+                        session["wm_site_creation_plan"] = plan
+                    except ValueError as exc:
+                        error = str(exc)
+                        plan = None
+            elif action == "create":
+                if request.form.get("confirmation") != "CREATE LOCAL SITE" or not plan:
+                    error = "Review the plan and type CREATE LOCAL SITE to approve."
+                elif current.get("installed"):
+                    error = "This local site has already been installed."
+                else:
+                    try:
+                        result = site_creator.install(plan)
+                        session.pop("wm_site_creation_plan", None)
+                        plan = None
+                    except (ValueError, RuntimeError) as exc:
+                        error = str(exc)
+            else:
+                abort(400)
+        return render_template(
+            "dev_create_site.html", active="websites", title="Create WordPress website",
+            plan=plan, current=current, result=result, error=error,
+        ), 409 if error else 200
+
+    @app.get("/dev/sites/second-site")
+    def dev_created_site_details():
+        site = created_site(second_site_status())
+        if site is None:
+            abort(404)
+        return render_template("dev_created_site.html", active="websites",
+                               title="Created WordPress website", site=site)
 
     @app.get("/dev/stack")
     def dev_stack():
