@@ -110,3 +110,38 @@ def test_forged_manifest_cannot_create_or_change_another_site():
         service.create({**second, "site_id": first["site_id"]}, "CREATE TEST SITE")
     assert backend.create_calls == 1
     assert service.list_sites()[0]["domain"] == "first.test"
+
+
+@pytest.mark.parametrize("sites", [
+    # An unrelated duplicate must block every new installation, not just a
+    # plan that happens to collide with one of the duplicated records.
+    [{"id": "owned-a", "domain": "first.test"},
+     {"id": "owned-a", "domain": "second.test"}],
+    [{"id": "owned-a", "domain": "FIRST.TEST."},
+     {"id": "owned-b", "domain": "first.test"}],
+    [{"id": "", "domain": "first.test"}],
+    [{"id": "   ", "domain": "first.test"}],
+    [{"id": "owned-a", "domain": ""}],
+])
+def test_ambiguous_ownership_inventory_blocks_new_plans_and_applies(sites):
+    backend = MemoryMultiSiteBackend()
+    service = WebsiteService(backend)
+    pending = service.plan("Third", "admin@third.test", "third.test", "8.3")
+    backend.sites = sites
+    with pytest.raises(ValueError, match="inventory"):
+        service.plan("Fourth", "admin@fourth.test", "fourth.test", "8.3")
+    with pytest.raises(ValueError, match="inventory"):
+        service.create(pending, "CREATE TEST SITE")
+    assert backend.create_calls == 0
+
+
+def test_missing_or_non_boolean_installation_state_fails_closed():
+    backend = MemoryMultiSiteBackend()
+    service = WebsiteService(backend)
+    for state in (None, "false", 0, 1):
+        backend.inspect = lambda state=state: {"installed": state}
+        with pytest.raises(ValueError, match="inventory"):
+            service.plan("Unsafe", "admin@third.test", "third.test", "8.3")
+    backend.inspect = lambda: {}
+    with pytest.raises(ValueError, match="inventory"):
+        service.plan("Unsafe", "admin@third.test", "third.test", "8.3")
