@@ -119,8 +119,13 @@ def make_plan(spec):
     )
 
 
-def _run(*args, input_text=None, timeout=120):
-    """Fixed argv; never a shell or untrusted executable."""
+def _run(*args, input_text=None, timeout=120, safe_download_diagnostic=False):
+    """Fixed argv; never a shell or untrusted executable.
+
+    Only core download (which receives NO credentials) may include a bounded
+    diagnostic in disposable CI. Password-bearing WP-CLI and MariaDB calls
+    still reveal neither output nor command arguments on error.
+    """
     try:
         completed = subprocess.run(
             list(args), check=True, text=True, input=input_text,
@@ -128,8 +133,17 @@ def _run(*args, input_text=None, timeout=120):
         )
         return completed.stdout.strip()
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-        # Command output can contain DB / WordPress credentials: never expose it.
-        raise RuntimeError("Native guest command failed: " + str(args[0])) from None
+        detail = "Native guest command failed: " + str(args[0])
+        if (safe_download_diagnostic and
+                isinstance(exc, subprocess.CalledProcessError) and
+                len(args) >= 6 and args[0] == "/usr/sbin/runuser" and
+                args[4] == "/usr/local/bin/wp" and
+                args[5:7] == ("core", "download")):
+            # Whitelisted non-secret command only; bounded and single-line.
+            safe = (exc.stderr or "")[-750:].replace("\\r", " ").replace("\\n", " ").strip()
+            if safe:
+                detail += ": " + safe
+        raise RuntimeError(detail) from None
 
 
 def _atomic_json(path, data):
@@ -311,7 +325,7 @@ def create(plan, confirmation):
             ))
             _run("/usr/sbin/runuser", "-u", user, "--", "/usr/local/bin/wp",
                  "core", "download", f"--version={CORE_VERSION}", "--locale=en_US",
-                 f"--path={paths['site']}", timeout=240)
+                 f"--path={paths['site']}", timeout=240, safe_download_diagnostic=True)
             config = paths["site"] / "wp-config.php"
             _write_exclusive(config, _wordpress_config(database, db_password), 0o640)
             os.chown(config, identity.pw_uid, identity.pw_gid)
