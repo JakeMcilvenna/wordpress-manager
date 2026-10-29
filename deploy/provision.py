@@ -507,8 +507,9 @@ def dispatch(message, root=False):
                                      (message.get("plan"), owner, time.time())).fetchone()
             if row is None:
                 raise ValueError("Plan is expired, used or belongs to another session")
-            if connection.execute("SELECT 1 FROM jobs WHERE state='running'").fetchone():
-                raise ValueError("A provisioning job is already running")
+            if (connection.execute("SELECT 1 FROM jobs WHERE state='running'").fetchone()
+                    or connection.execute("SELECT 1 FROM site_jobs WHERE state='running'").fetchone()):
+                raise ValueError("A server or website job is already running")
             job = secrets.token_hex(16)
             connection.execute("UPDATE plans SET used=1 WHERE id=?", (row["id"],))
             connection.execute("INSERT INTO jobs VALUES(?, 'running', ?)", (job, "Approved plan " + row["id"]))
