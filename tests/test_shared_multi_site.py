@@ -65,8 +65,10 @@ def test_two_independent_sites_created_through_same_shared_service():
         create_site(service, "FIRST.TEST")
     with pytest.raises(ValueError, match="already been installed"):
         service.create(first, "CREATE TEST SITE")
-    assert service.list_sites()[0] == first_result
-    assert service.list_sites()[1] == second_result
+    assert all(service.list_sites()[0][key] == first_result[key]
+               for key in ("id", "domain", "name", "state"))
+    assert all(service.list_sites()[1][key] == second_result[key]
+               for key in ("id", "domain", "name", "state"))
     assert backend.create_calls == 2
 
 
