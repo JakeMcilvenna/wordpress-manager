@@ -27,6 +27,7 @@ def provision(tmp_path, monkeypatch):
         CREATE TABLE plans(id TEXT PRIMARY KEY,owner TEXT,expires REAL,body TEXT,used INTEGER DEFAULT 0);
         CREATE TABLE jobs(id TEXT PRIMARY KEY,state TEXT,detail TEXT);
         ''')
+        m._site_protocol().initialize(connection)
     monkeypatch.setattr(m, 'command', lambda *args: pytest.fail('Unexpected real command'))
     return m
 
@@ -129,3 +130,24 @@ def test_login_throttle_and_no_cleartext_secrets(provision):
         m.authenticate('correct-password')
     assert b'secret-never-logged' not in (m.STATE / 'ledger.sqlite').read_bytes()
     assert token.encode() not in (m.STATE / 'ledger.sqlite').read_bytes()
+
+
+def test_stack_changes_refuse_concurrent_site_job(provision, monkeypatch):
+    m = provision
+    import time
+    with m.db() as connection:
+        connection.execute("INSERT INTO sessions VALUES(?,?)",
+                           (m.digest("operator"), time.time() + 100))
+    monkeypatch.setattr(m, "make_plan", lambda php: {"php": php})
+    plan = m.dispatch({"op": "plan", "capability": "operator", "php": "8.3"})
+    with m.db() as connection:
+        connection.execute(
+            "INSERT INTO site_jobs(id,owner,site_id,state,detail) VALUES(?,?,?,?,?)",
+            ("a" * 32, "operator", "wm-aaaaaaaaaaaa", "running", "install"),
+        )
+    with pytest.raises(ValueError, match="website job"):
+        m.dispatch({"op": "apply", "capability": "operator",
+                    "plan": plan["id"], "confirmation": m.CONFIRM})
+    with m.db() as connection:
+        assert connection.execute("SELECT used FROM plans WHERE id=?",
+                                  (plan["id"],)).fetchone()[0] == 0
