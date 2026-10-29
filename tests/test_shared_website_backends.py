@@ -1,5 +1,4 @@
 """Shared website contract must be consistent across Docker and Ubuntu."""
-from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -133,3 +132,7 @@ def test_project_policy_and_web_routes_cannot_depend_on_docker_specific_core():
     assert "app.config.get(\"DEV_PREVIEW\") is True" in app_source
     assert "class WebsiteBackend(Protocol)" in (
         root / "wordpress_manager/site_operations.py").read_text()
+    preview_source = (root / "dev/preview.py").read_text()
+    assert "WebsiteService(DockerWebsiteBackend(site_creator))" in preview_source
+    assert "site_service.plan(" in preview_source
+    assert "site_service.create(" in preview_source
