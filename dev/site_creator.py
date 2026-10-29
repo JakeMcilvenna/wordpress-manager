@@ -10,6 +10,8 @@ import re
 from urllib import request
 from urllib.error import HTTPError, URLError
 
+from wordpress_manager.site_operations import WebsiteSpec
+
 BASE = "http://site2-provisioner:8093"
 PUBLIC_URL = "http://127.0.0.1:8092"
 SITE_ID = "local-second-site"
@@ -18,32 +20,12 @@ MAX_TITLE = 70
 
 
 def validate_fields(title, email, domain, php="8.5"):
-    if not isinstance(title, str) or not (1 <= len(title.strip()) <= MAX_TITLE):
-        raise ValueError("Provide a website name between 1 and 70 characters")
-    title = title.strip()
-    if any(ord(c) < 32 or ord(c) == 127 for c in title):
-        raise ValueError("Website name contains invalid control characters")
-    if not isinstance(email, str) or len(email) > 120 or not re.fullmatch(
-        r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,24}", email
-    ):
-        raise ValueError("Provide a valid local test administrator email")
-    if not isinstance(domain, str):
-        raise ValueError("Provide a valid domain name")
-    domain = domain.lower().strip().rstrip(".")
-    if len(domain) > 253 or len(domain) < 4 or "." not in domain:
-        raise ValueError("Provide a complete domain such as client-example.test")
-    labels = domain.split(".")
-    if any(not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
-           for label in labels):
-        raise ValueError("Domain labels must contain only letters, numbers and interior hyphens")
-    if not re.fullmatch(r"[a-z]{2,24}", labels[-1]):
-        raise ValueError("The domain must end in a valid alphabetic suffix")
-    if domain in ("localhost", "example.com", "example.org", "example.net") or domain.endswith(".localhost"):
-        raise ValueError("Choose a domain reserved for this development website")
-    if php != "8.5":
+    """Compatibility adapter; all field rules live in the shared core."""
+    spec = WebsiteSpec.from_fields(title, email, domain, php)
+    if spec.php != "8.5":
         raise ValueError("Only PHP 8.5 is provisioned in this first Docker site slot")
-    return {"title": title, "email": email, "domain": domain, "php": "8.5",
-            "site_id": SITE_ID, "url": PUBLIC_URL + "/"}
+    return {"title": spec.title, "email": spec.email, "domain": spec.domain,
+            "php": spec.php, "site_id": SITE_ID, "url": PUBLIC_URL + "/"}
 
 
 class LocalSiteProvisioner:
