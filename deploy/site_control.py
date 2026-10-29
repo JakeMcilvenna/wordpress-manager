@@ -66,8 +66,8 @@ def _trusted_plan(native, body):
 
 
 def job_worker(job_id, plan, db, audit):
-    native = native_executor()
     try:
+        native = native_executor()
         audit("site-job-start", {"job": job_id, "site": plan.site_id})
         result = native.create(plan, native.CONFIRMATION)
     except Exception:
