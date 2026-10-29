@@ -5,7 +5,10 @@ import re
 import pytest
 
 from deploy import ubuntu_site_executor as native
-from wordpress_manager.site_operations import WebsiteSpec, WebsiteService, WebsiteOperationUnavailable
+# The native executor loads the same stdlib-only contract without Flask.
+WebsiteSpec = native.WebsiteSpec
+WebsiteService = native.WebsiteService
+WebsiteOperationUnavailable = native.WebsiteOperationUnavailable
 
 
 def spec(domain="one.test", php="8.3"):
