@@ -22,6 +22,44 @@ _OPAQUE_RESOURCE = re.compile(r"[a-z][a-z0-9-]{1,39}:[A-Za-z0-9_][A-Za-z0-9_.-]{
 _FINISHED_JOBS = frozenset(("succeeded", "cancelled"))
 
 
+def _strict_completed_job_json(job):
+    """Serialize only finite JSON values without lossy Python coercions.
+
+    json.dumps accepts tuples and non-string map keys, which can make
+    different ownership journals share the same review fingerprint.
+    """
+    from math import isfinite
+
+    stack = [(job, 0)]
+    seen = set()
+    count = 0
+    while stack:
+        item, depth = stack.pop()
+        count += 1
+        if count > 10000 or depth > 32:
+            raise ValueError("Invalid completed operation journal")
+        kind = type(item)
+        if kind in (str, int, bool, type(None)):
+            continue
+        if kind is float:
+            if not isfinite(item):
+                raise ValueError("Invalid completed operation journal")
+            continue
+        if kind not in (dict, list) or id(item) in seen:
+            raise ValueError("Invalid completed operation journal")
+        seen.add(id(item))
+        if kind is dict:
+            if any(type(key) is not str for key in item):
+                raise ValueError("Invalid completed operation journal")
+            stack.extend((entry, depth + 1) for entry in item.values())
+        else:
+            stack.extend((entry, depth + 1) for entry in item)
+    try:
+        return json.dumps(job, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    except (TypeError, ValueError, OverflowError, RecursionError):
+        raise ValueError("Invalid completed operation journal") from None
+
+
 def _identity(value, pattern, label):
     if not isinstance(value, str) or pattern.fullmatch(value) is None:
         raise ValueError("Invalid " + label)
@@ -190,12 +228,7 @@ class DeletionPlanner:
         for job in jobs:
             if not isinstance(job, dict) or job.get("state") not in _FINISHED_JOBS:
                 raise ValueError("Unfinished or ambiguous site operation requires review")
-            try:
-                completed_jobs.append(json.dumps(
-                    job, sort_keys=True, separators=(",", ":"), allow_nan=False
-                ))
-            except (TypeError, ValueError):
-                raise ValueError("Invalid completed operation journal") from None
+            completed_jobs.append(_strict_completed_job_json(job))
 
         recovery = _recovery(self.inventory.recovery_point(site_id), selected)
         # Review evidence only; not a lock or authorization to delete.
