@@ -18,6 +18,7 @@ _SITE_ID = re.compile(r"[a-z][a-z0-9-]{2,63}\Z")
 _BACKEND = re.compile(r"[a-z][a-z0-9-]{1,39}\Z")
 _BACKUP_ID = re.compile(r"bkp-[0-9a-f]{32}\Z")
 _DIGEST = re.compile(r"[0-9a-f]{64}\Z")
+_OPAQUE_RESOURCE = re.compile(r"[a-z][a-z0-9-]{1,39}:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\Z")
 _MAX_ARCHIVE_BYTES = 1024 ** 4  # Defensive planning limit; not a storage quota.
 
 
@@ -41,12 +42,17 @@ def _resources(value):
     # Reject aliases now; a future executor must resolve real paths and
     # symlinks while holding an exclusive ownership lock.
     for resource in resources:
-        if resource.startswith("/") and (
-            resource == "/" or resource.endswith("/") or "//" in resource
-            or "\\" in resource
-            or any(part in (".", "..") for part in resource.split("/"))
-        ):
-            raise ValueError("Ambiguous owned resource path")
+        if resource.startswith("/"):
+            if (
+                resource == "/" or resource.endswith("/") or "//" in resource
+                or "\\" in resource
+                or any(part in (".", "..") for part in resource.split("/"))
+            ):
+                raise ValueError("Ambiguous owned resource path")
+        elif _OPAQUE_RESOURCE.fullmatch(resource) is None:
+            # Reject relative paths and untyped claims: they can alias owned
+            # assets or escape reliable cross-site ownership comparisons.
+            raise ValueError("Ambiguous owned resource identifier")
     return resources
 
 
