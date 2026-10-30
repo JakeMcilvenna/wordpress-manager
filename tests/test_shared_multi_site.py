@@ -145,3 +145,41 @@ def test_missing_or_non_boolean_installation_state_fails_closed():
     backend.inspect = lambda: {}
     with pytest.raises(ValueError, match="inventory"):
         service.plan("Unsafe", "admin@third.test", "third.test", "8.3")
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda site: site.pop("domain"),
+    lambda site: site.update(domain=""),
+    lambda site: site.update(domain="FIRST.TEST"),
+    lambda site: site.update(domain="first.test."),
+    lambda site: site.update(domain="Not recorded"),
+    lambda site: site.update(domain="first.test/../other.test"),
+    lambda site: site.pop("state"),
+    lambda site: site.update(state="needs-review"),
+    lambda site: site.update(id=" owned-a "),
+])
+def test_incomplete_site_inventory_blocks_planning_and_pending_approval(mutation):
+    backend = MemoryMultiSiteBackend()
+    service = WebsiteService(backend)
+    pending = service.plan("Pending", "admin@pending.test", "pending.test", "8.3")
+    backend.sites = [{"id": "owned-a", "domain": "first.test", "state": "healthy"}]
+    mutation(backend.sites[0])
+    with pytest.raises(ValueError, match="inventory"):
+        service.plan("New", "admin@new.test", "new.test", "8.3")
+    with pytest.raises(ValueError, match="inventory"):
+        service.create(pending, "CREATE TEST SITE")
+    assert backend.create_calls == 0
+
+
+@pytest.mark.parametrize("count", [None, True, False, "1", 0, 2, -1])
+def test_reported_site_count_must_match_full_inventory(count):
+    backend = MemoryMultiSiteBackend()
+    service = WebsiteService(backend)
+    pending = service.plan("Pending", "admin@pending.test", "pending.test", "8.3")
+    backend.sites = [{"id": "owned-a", "domain": "first.test", "state": "healthy"}]
+    backend.inspect = lambda: {"installed": True, "sites": count}
+    with pytest.raises(ValueError, match="inventory"):
+        service.plan("New", "admin@new.test", "new.test", "8.3")
+    with pytest.raises(ValueError, match="inventory"):
+        service.create(pending, "CREATE TEST SITE")
+    assert backend.create_calls == 0
