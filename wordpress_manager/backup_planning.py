@@ -200,6 +200,10 @@ class BackupPlanner:
             domain = _domain(record.get("domain"))
             _identity(record.get("backend"), _BACKEND, "backend")
             owned = _resources(record.get("resources"))
+            # An incomplete foreign site may have unrecorded ownership claims.
+            # Refuse planning even when the selected site itself is healthy.
+            if record.get("state") != "healthy":
+                raise ValueError("Unhealthy or incomplete site inventory requires review")
             if site_id in site_ids or domain in domains:
                 raise ValueError("Ambiguous site or domain ownership")
             site_ids.add(site_id)
