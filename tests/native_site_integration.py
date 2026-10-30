@@ -185,8 +185,8 @@ def main():
     )
     alias_config = native.NGINX_AVAILABLE / "wm-unmanaged-alias.conf"
     alias_config.write_text(
-        "server {\\n  listen 127.0.0.1:18080;\\n"
-        "  server_name other.test reserved.test;\\n}\\n"
+        "server {\n  listen 127.0.0.1:18080;\n"
+        "  server_name other.test reserved.test;\n}\n"
     )
     try:
         try:
@@ -219,7 +219,10 @@ def main():
         else:
             raise AssertionError("Interrupted foreign site was ignored by planner")
         try:
-            native.create(native.make_plan(third_plan["spec"]), native.CONFIRMATION)
+            native.create(native.make_plan(native.WebsiteSpec.from_fields(
+                third_plan["title"], third_plan["email"],
+                third_plan["domain"], third_plan["php"],
+            )), native.CONFIRMATION)
         except ValueError:
             pass
         else:
