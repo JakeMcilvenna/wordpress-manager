@@ -210,7 +210,7 @@ def test_tampered_created_ledger_cannot_free_or_adopt_resources(
 
 @pytest.mark.parametrize(("config", "claimed"), [
     ("server { server_name other.test one.test; }", True),
-    ("server_name other.test\\n one.test;", True),
+    ("server_name other.test\n one.test;", True),
     ("server_name *.test;", True),
     ("server_name .one.test;", True),
     ("server_name one.test;", True),
