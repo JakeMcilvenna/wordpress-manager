@@ -215,3 +215,32 @@ def test_non_object_native_ledger_is_not_trusted(monkeypatch, tmp_path):
     (tmp_path / (site_id + ".json")).write_text("[]")
     with pytest.raises(ValueError, match="identity"):
         native.DisposableUbuntuWebsiteBackend().list_sites()
+
+
+@pytest.mark.parametrize(("state", "expected"), [
+    ("provisioning", "Incomplete native site ledger"),
+    ("needs-review", "Incomplete native site ledger"),
+    ("created", "Incomplete native site ownership record"),
+])
+def test_direct_native_create_refuses_unresolved_foreign_site_before_writes(
+    monkeypatch, tmp_path, state, expected
+):
+    """The root executor cannot bypass shared-service inventory checks.
+
+    A separate failed installation may own unknown resources even when the
+    new site's deterministic paths and domain do not overlap.
+    """
+    monkeypatch.setattr(native, "disposable_only", lambda: None)
+    monkeypatch.setattr(native, "RECORDS", tmp_path)
+    foreign_id = native.site_id_for("foreign.test")
+    (tmp_path / (foreign_id + ".json")).write_text(json.dumps({
+        "site_id": foreign_id, "domain": "foreign.test",
+        "title": "Unresolved site", "state": state,
+    }))
+    def unexpected_write(*args, **kwargs):
+        raise AssertionError("Native create must not start filesystem writes")
+    monkeypatch.setattr(native, "_directory", unexpected_write)
+    new_plan = native.make_plan(spec("new.test"))
+    with pytest.raises(ValueError, match=expected):
+        native.create(new_plan, native.CONFIRMATION)
+    assert not (tmp_path / (new_plan.site_id + ".json")).exists()
