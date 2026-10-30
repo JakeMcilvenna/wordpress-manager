@@ -249,6 +249,13 @@ class BackupPlanner:
                 "succeeded", "cancelled"
             ):
                 raise ValueError("Unfinished or ambiguous site operation requires review")
+            # A completed entry with malformed metadata is not a trustworthy
+            # journal record. Match deletion review's strict JSON boundary;
+            # never silently accept NaN, objects or mixed-type map keys.
+            try:
+                json.dumps(job, sort_keys=True, separators=(",", ":"), allow_nan=False)
+            except (TypeError, ValueError):
+                raise ValueError("Invalid completed operation journal") from None
 
     def plan_backup(self, site_id):
         site = self._site(site_id)
