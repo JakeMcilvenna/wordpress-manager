@@ -182,7 +182,8 @@ checksum field and a UTC timestamp. The trusted adapter must also provide a
 **complete site inventory and operation journal** (`sites()` and `jobs()`).
 Planning refuses duplicate site IDs, domains, resource claims (including
 parent/child filesystem paths owned by different sites), noncanonical path
-spellings, a selected-site snapshot mismatch, missing inventory, and unfinished
+spellings, relative paths, untyped or malformed opaque resource identifiers,
+a selected-site snapshot mismatch, missing inventory, and unfinished
 or ambiguous jobs. Lexical checks cannot establish real filesystem ownership
 or symlink safety; a future executor must recheck under an exclusive lock. These
 read-only checks are not locks and must be repeated atomically by any future
