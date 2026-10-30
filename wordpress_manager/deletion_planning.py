@@ -45,6 +45,16 @@ def _resources(value):
         raise ValueError("Invalid owned resource")
     if len(set(value)) != len(value):
         raise ValueError("Duplicate owned resource")
+    # These are lexical ownership keys, never permission to open a path.
+    # Reject alternate spellings before checking cross-site claims. A future
+    # executor must separately validate symlinks and real paths under a lock.
+    for resource in value:
+        if resource.startswith("/") and (
+            resource == "/" or resource.endswith("/") or "//" in resource
+            or "\\" in resource
+            or any(part in (".", "..") for part in resource.split("/"))
+        ):
+            raise ValueError("Ambiguous owned resource path")
     return tuple(value)
 
 
@@ -127,6 +137,7 @@ class DeletionPlanner:
         if not isinstance(records, (list, tuple)) or not 1 <= len(records) <= 10000:
             raise ValueError("Complete site inventory required")
         claims = set()
+        path_claims = {}
         site_ids = set()
         domains = set()
         found = 0
@@ -140,12 +151,23 @@ class DeletionPlanner:
                 if resource in claims:
                     raise ValueError("Resource is claimed by multiple sites")
                 claims.add(resource)
+                if resource.startswith("/"):
+                    path_claims[resource] = candidate["site_id"]
             if candidate["site_id"] == site_id:
                 found += 1
                 if candidate != selected:
                     raise ValueError("Site inventory changed during review")
         if found != 1:
             raise ValueError("Selected site missing from complete inventory")
+
+        # Exact-string comparison alone misses /srv/site owned by one site
+        # and /srv/site/uploads owned by another. Check both inventory orders.
+        for path, owner in path_claims.items():
+            parent = path.rsplit("/", 1)[0]
+            while parent:
+                if parent in path_claims and path_claims[parent] != owner:
+                    raise ValueError("Nested path claimed by multiple sites")
+                parent = parent.rsplit("/", 1)[0]
 
         jobs = self.inventory.jobs()
         if not isinstance(jobs, (list, tuple)) or len(jobs) > 10000:
