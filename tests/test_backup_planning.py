@@ -367,3 +367,52 @@ def test_completed_operation_journal_is_accepted_without_enabling_writes():
     assert planner.plan_backup(SITE["site_id"])["executable"] is False
     assert planner.plan_restore(SITE["site_id"], BACKUP_ID)["executable"] is False
     assert ledger.writes == 0
+
+
+@pytest.mark.parametrize("resource", [
+    "srv/wm-firstsite001", "../srv/wm-firstsite001", "./srv/site",
+    "wm-firstsite001", "linux-user:", "linux-user:.hidden",
+    "linux-user:/etc/shadow", "linux-user:account/other",
+    "linux-user:account\\other", "linux-user:account:other",
+])
+def test_backup_and_restore_reject_relative_or_untyped_selected_claims(resource):
+    ledger = Ledger()
+    ledger.site_records[SITE["site_id"]]["resources"][0] = resource
+    ledger.backups[BACKUP_ID]["resources"][0] = resource
+    planner = BackupPlanner(ledger)
+    with pytest.raises(ValueError, match="resource identifier"):
+        planner.plan_backup(SITE["site_id"])
+    with pytest.raises(ValueError, match="resource identifier"):
+        planner.plan_restore(SITE["site_id"], BACKUP_ID)
+
+
+@pytest.mark.parametrize("resource", [
+    "srv/other", "untyped", "linux-user:.hidden", "mariadb-database:other/db",
+])
+def test_foreign_ambiguous_claim_blocks_both_backup_and_restore(resource):
+    ledger = Ledger()
+    ledger.site_records[OTHER["site_id"]]["resources"][0] = resource
+    planner = BackupPlanner(ledger)
+    with pytest.raises(ValueError, match="resource identifier"):
+        planner.plan_backup(SITE["site_id"])
+    with pytest.raises(ValueError, match="resource identifier"):
+        planner.plan_restore(SITE["site_id"], BACKUP_ID)
+
+
+def test_manifest_cannot_introduce_untyped_claim_even_with_valid_site():
+    ledger = Ledger()
+    ledger.backups[BACKUP_ID]["resources"][0] = "relative/backup/path"
+    assert BackupPlanner(ledger).plan_backup(SITE["site_id"])["executable"] is False
+    with pytest.raises(ValueError, match="resource identifier"):
+        BackupPlanner(ledger).plan_restore(SITE["site_id"], BACKUP_ID)
+
+
+def test_namespaced_opaque_resource_claims_remain_valid_and_read_only():
+    ledger = Ledger()
+    extra = ["mariadb-database:wm_firstsite001", "php-fpm-pool:wm-firstsite001"]
+    ledger.site_records[SITE["site_id"]]["resources"].extend(extra)
+    ledger.backups[BACKUP_ID]["resources"].extend(extra)
+    planner = BackupPlanner(ledger)
+    assert planner.plan_backup(SITE["site_id"])["resources"][-2:] == extra
+    assert planner.plan_restore(SITE["site_id"], BACKUP_ID)["executable"] is False
+    assert ledger.writes == 0
