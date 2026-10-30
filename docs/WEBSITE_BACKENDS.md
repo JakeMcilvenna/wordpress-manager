@@ -140,14 +140,17 @@ ownership journal. The WordPress administrator password is returned only to
 the disposable integration test.
 
 The root-owned site ledger records the site ID, intended domain, owned
-resources and state. Partial failures are marked `needs-review`; the
-prototype **does not automatically delete or roll back** partially created
-resources. It refuses to adopt or overwrite existing paths/users/databases.
+resources and state. Partial failures are marked `needs-review`; an
+incomplete, ambiguous or symlinked ownership record blocks further native
+site planning until an operator investigates it. The prototype **does not
+automatically delete or roll back** partially created resources. It refuses
+to adopt or overwrite existing paths/users/databases.
 
 The real integration test `tests/native_site_integration.py` runs after
 stack installation inside the existing disposable `tests/stack_integration.py`
 guest (the **full production CI gate**, not fast UI CI). It verifies the
-actual WordPress HTTP site, database, PHP-FPM pool, ownership and refusal of
+two actual WordPress HTTP sites, separate databases and PHP-FPM pools,
+ownership, persistence across Nginx/PHP-FPM restarts, and refusal of
 duplicate or forged plans. This should not be taken as proof of production
 support until that full integration job has actually passed.
 
