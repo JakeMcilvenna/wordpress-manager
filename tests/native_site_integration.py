@@ -178,6 +178,58 @@ def main():
     assert native.read_record(plan["site_id"]) == first_record
     check_site(domain)
     check_site(second_domain)
+    # An unmanaged Nginx alias must not be adopted even when the intended
+    # domain is not the first name in an existing server_name directive.
+    alias_plan = restarted.plan(
+        "Reserved alias", "admin@reserved.test", "reserved.test", "8.3"
+    )
+    alias_config = native.NGINX_AVAILABLE / "wm-unmanaged-alias.conf"
+    alias_config.write_text(
+        "server {\\n  listen 127.0.0.1:18080;\\n"
+        "  server_name other.test reserved.test;\\n}\\n"
+    )
+    try:
+        try:
+            restarted.create(alias_plan, native.CONFIRMATION)
+        except ValueError as exc:
+            assert "already configured" in str(exc)
+        else:
+            raise AssertionError("Existing Nginx alias was adopted")
+        assert native.read_record(alias_plan["site_id"]) is None
+    finally:
+        alias_config.unlink()
+
+    # Simulate a third site's interrupted ownership journal on the real guest.
+    # Both service planning and a direct root executor call must fail closed,
+    # without touching either of the two healthy WordPress installations.
+    third_plan = restarted.plan(
+        "Third site", "admin@third.test", "third.test", "8.3"
+    )
+    interrupted_id = native.site_id_for("interrupted.test")
+    interrupted_path = native.RECORDS / (interrupted_id + ".json")
+    interrupted_path.write_text(json.dumps({
+        "site_id": interrupted_id, "domain": "interrupted.test",
+        "title": "Interrupted site", "state": "needs-review",
+    }))
+    try:
+        try:
+            restarted.plan("Fourth site", "admin@fourth.test", "fourth.test", "8.3")
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Interrupted foreign site was ignored by planner")
+        try:
+            native.create(native.make_plan(third_plan["spec"]), native.CONFIRMATION)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Direct executor ignored interrupted foreign site")
+        assert native.read_record(third_plan["site_id"]) is None
+        check_site(domain)
+        check_site(second_domain)
+    finally:
+        interrupted_path.unlink()
+
     print("PASS: disposable Ubuntu guest installed two isolated native WordPress "
           "sites, preserved them across service restarts and rejected duplicate "
           "or forged plans", flush=True)
