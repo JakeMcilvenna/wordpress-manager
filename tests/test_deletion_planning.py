@@ -265,6 +265,47 @@ def test_nonfinite_or_unserializable_completed_job_fails_closed():
         DeletionPlanner(ledger).plan_delete(SITE["site_id"])
 
 
+@pytest.mark.parametrize("metadata", [
+    {1: "integer key"}, {None: "null key"}, {True: "boolean key"},
+    {1.5: "float key"}, (1, 2), {"nested": ("tuple",)},
+    {"nested": {2: "coerced key"}}, b"binary",
+])
+def test_completed_job_json_coercion_cannot_weaken_review_fingerprint(metadata):
+    ledger = Ledger()
+    ledger.operations = [{"state": "succeeded", "metadata": metadata}]
+    with pytest.raises(ValueError, match="journal"):
+        DeletionPlanner(ledger).plan_delete(SITE["site_id"])
+    assert ledger.writes == 0
+
+
+def test_completed_job_json_cycles_and_deep_nesting_fail_closed():
+    cycle = []
+    cycle.append(cycle)
+    deep = []
+    cursor = deep
+    for _ in range(35):
+        next_level = []
+        cursor.append(next_level)
+        cursor = next_level
+    for metadata in (cycle, deep):
+        ledger = Ledger()
+        ledger.operations = [{"state": "cancelled", "metadata": metadata}]
+        with pytest.raises(ValueError, match="journal"):
+            DeletionPlanner(ledger).plan_delete(SITE["site_id"])
+
+
+def test_completed_job_nested_json_is_stable_for_review():
+    ledger = Ledger()
+    ledger.operations = [{"state": "succeeded", "metadata": {
+        "attempts": [1, 2], "verified": True, "note": None, "duration": 0.25,
+    }}]
+    planner = DeletionPlanner(ledger)
+    original = planner.plan_delete(SITE["site_id"])
+    assert original["executable"] is False
+    assert planner.plan_delete(SITE["site_id"])["snapshot_digest"] == original["snapshot_digest"]
+    assert ledger.writes == 0
+
+
 @pytest.mark.parametrize("resource", [
     "srv/wordpress-manager-sites/wm-aaaaaaaaaaaa",
     "../srv/wordpress-manager-sites/wm-aaaaaaaaaaaa",
