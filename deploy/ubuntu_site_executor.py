@@ -178,6 +178,25 @@ def _directory(path, mode):
     path.chmod(mode)
 
 
+def _nginx_claims_domain(config, domain):
+    """Conservatively detect existing Nginx names, including aliases.
+
+    A server_name directive may list several names or span lines. An exact
+    one-name regex would miss an alias and allow a conflicting site install.
+    Wildcards are treated as claims too; this is not a full Nginx parser.
+    """
+    uncommented = re.sub(r"(?m)#[^\n]*$", "", config)
+    for match in re.finditer(r"\bserver_name\s+([^;{}]+);", uncommented):
+        for name in match.group(1).split():
+            if name == domain:
+                return True
+            if name.startswith("*.") and domain.endswith(name[1:]):
+                return True
+            if name.startswith(".") and (domain == name[1:] or domain.endswith(name)):
+                return True
+    return False
+
+
 def _preflight(plan):
     disposable_only()
     if not isinstance(plan, WebsitePlan) or plan != make_plan(plan.spec):
@@ -215,7 +234,7 @@ def _preflight(plan):
         if root.is_dir():
             for path in root.iterdir():
                 if path.is_file() and not path.is_symlink() and path.suffix == ".conf":
-                    if re.search(r"\bserver_name\s+" + re.escape(plan.spec.domain) + r"\s*;", path.read_text()):
+                    if _nginx_claims_domain(path.read_text(), plan.spec.domain):
                         raise ValueError("Domain is already configured in Nginx")
     return paths
 
@@ -399,7 +418,9 @@ class DisposableUbuntuWebsiteBackend:
         if not RECORDS.is_dir():
             return []
         sites = []
-        for record in sorted(RECORDS.glob("*.json")):
+        # glob("*.json") silently ignores orphaned, renamed and hidden
+        # records. Unknown entries can represent incomplete ownership.
+        for record in sorted(RECORDS.iterdir()):
             if (record.is_symlink() or not record.is_file() or
                     not ID.fullmatch(record.stem)):
                 raise ValueError("Unsafe or unrecognized site ledger record")
