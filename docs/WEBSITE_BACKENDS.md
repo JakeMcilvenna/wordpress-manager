@@ -182,8 +182,11 @@ Noncanonical filesystem claims such as dot segments, double separators and
 trailing slashes are rejected before ownership comparison. These are lexical
 checks only: they do not resolve symlinks or replace a locked, filesystem-aware
 ownership verification in any future executor. The review requires a typed `DELETE <site-id> <domain>`
-confirmation, a snapshot digest and explicit gates for locking, verified
-restorability, rollback and audit.
+confirmation, a review-only snapshot digest covering the selected site, recovery
+metadata, complete site ownership inventory and completed operation journal,
+plus explicit gates for locking, verified restorability, rollback and audit.
+The digest is stable across inventory/journal enumeration order, but changes
+when foreign ownership or completed job evidence changes.
 
 A ledger's `state: verified`, SHA-256 field and snapshot digest are **not**
 proof that the archive is authentic or restorable. No file is opened,
