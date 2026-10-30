@@ -274,3 +274,48 @@ def test_direct_native_create_refuses_unresolved_foreign_site_before_writes(
     with pytest.raises(ValueError, match=expected):
         native.create(new_plan, native.CONFIRMATION)
     assert not (tmp_path / (new_plan.site_id + ".json")).exists()
+
+@pytest.mark.parametrize(("directory", "filename", "config"), [
+    ("available", "unmanaged.conf", "server { server_name OTHER.TEST One.Test; }"),
+    ("enabled", "extensionless-vhost", "server { server_name OTHER.TEST ONE.TEST; }"),
+    ("conf_d", "unmanaged.conf", "server { server_name *.test; }"),
+])
+def test_native_nginx_preflight_checks_all_config_sources(
+    monkeypatch, tmp_path, directory, filename, config
+):
+    """Enabled vhosts can have no .conf suffix and names are case-insensitive."""
+    roots = {name: tmp_path / name for name in ("available", "enabled", "conf_d")}
+    for root in roots.values():
+        root.mkdir()
+    monkeypatch.setattr(native, "NGINX_AVAILABLE", roots["available"])
+    monkeypatch.setattr(native, "NGINX_ENABLED", roots["enabled"])
+    monkeypatch.setattr(native, "NGINX_CONF_D", roots["conf_d"])
+    external = tmp_path / "external-vhost"
+    external.write_text(config)
+    (roots[directory] / filename).symlink_to(external)
+    with pytest.raises(ValueError, match="already configured"):
+        native._check_nginx_domain_available("one.test")
+
+
+def test_native_nginx_preflight_rejects_broken_active_link(monkeypatch, tmp_path):
+    available, enabled, conf_d = (tmp_path / name for name in ("available", "enabled", "conf_d"))
+    for root in (available, enabled, conf_d):
+        root.mkdir()
+    monkeypatch.setattr(native, "NGINX_AVAILABLE", available)
+    monkeypatch.setattr(native, "NGINX_ENABLED", enabled)
+    monkeypatch.setattr(native, "NGINX_CONF_D", conf_d)
+    (enabled / "orphaned-vhost").symlink_to(tmp_path / "missing-vhost")
+    with pytest.raises(ValueError, match="Unresolvable Nginx configuration link"):
+        native._check_nginx_domain_available("new.test")
+
+
+def test_native_nginx_preflight_accepts_unrelated_enabled_vhost(monkeypatch, tmp_path):
+    available, enabled, conf_d = (tmp_path / name for name in ("available", "enabled", "conf_d"))
+    for root in (available, enabled, conf_d):
+        root.mkdir()
+    monkeypatch.setattr(native, "NGINX_AVAILABLE", available)
+    monkeypatch.setattr(native, "NGINX_ENABLED", enabled)
+    monkeypatch.setattr(native, "NGINX_CONF_D", conf_d)
+    (enabled / "unrelated").write_text("server { server_name unrelated.test; }")
+    native._check_nginx_domain_available("one.test")
+
