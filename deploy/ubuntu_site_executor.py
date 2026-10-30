@@ -182,6 +182,11 @@ def _preflight(plan):
     disposable_only()
     if not isinstance(plan, WebsitePlan) or plan != make_plan(plan.spec):
         raise ValueError("Native website plan mismatch")
+    # Direct executor and authenticated socket callers must both reject a
+    # foreign interrupted, forged or unreadable ownership journal. Checking
+    # only the proposed site's paths would let new installs proceed while
+    # another site has unknown resources after a partial failure.
+    DisposableUbuntuWebsiteBackend().list_sites()
     paths = owned_paths(plan.site_id, plan.spec.php)
     for path in paths.values():
         if os.path.lexists(path):
