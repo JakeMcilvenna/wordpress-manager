@@ -300,6 +300,19 @@ def test_backup_and_restore_reject_nested_cross_site_paths(
         planner.plan_restore(SITE["site_id"], BACKUP_ID)
 
 
+@pytest.mark.parametrize("state", [
+    "provisioning", "needs-review", "failed", "suspended", None,
+])
+def test_foreign_unhealthy_site_blocks_backup_and_restore_planning(state):
+    ledger = Ledger()
+    ledger.site_records[OTHER["site_id"]]["state"] = state
+    planner = BackupPlanner(ledger)
+    with pytest.raises(ValueError, match="Unhealthy or incomplete"):
+        planner.plan_backup(SITE["site_id"])
+    with pytest.raises(ValueError, match="Unhealthy or incomplete"):
+        planner.plan_restore(SITE["site_id"], BACKUP_ID)
+
+
 def test_sibling_path_prefix_does_not_block_backup_planning():
     ledger = Ledger()
     ledger.site_records[OTHER["site_id"]]["resources"][0] = (
