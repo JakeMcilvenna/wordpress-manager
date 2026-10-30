@@ -143,6 +143,10 @@ class DeletionPlanner:
         found = 0
         for raw in records:
             candidate = _site(raw)
+            # A foreign site still provisioning or awaiting review may have
+            # unrecorded resources. Do not plan destructive work around it.
+            if candidate["state"] != "healthy":
+                raise ValueError("Unhealthy or incomplete site inventory requires review")
             if candidate["site_id"] in site_ids or candidate["domain"] in domains:
                 raise ValueError("Ambiguous site or domain ownership")
             site_ids.add(candidate["site_id"])
