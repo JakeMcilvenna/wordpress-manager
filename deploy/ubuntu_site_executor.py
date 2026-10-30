@@ -193,7 +193,14 @@ def _nginx_claims_domain(config, domain):
             name = name.lower()
             if name == domain:
                 return True
+            # Regex names and Nginx's dynamic $hostname cannot be proven
+            # disjoint from a new domain by a static ownership preflight.
+            if name.startswith(("~", "$")):
+                return True
             if name.startswith("*.") and domain.endswith(name[1:]):
+                return True
+            # Nginx also supports trailing wildcards (for example one.*).
+            if name.endswith(".*") and domain.startswith(name[:-1]):
                 return True
             if name.startswith(".") and (domain == name[1:] or domain.endswith(name)):
                 return True
