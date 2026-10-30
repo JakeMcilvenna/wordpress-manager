@@ -149,6 +149,16 @@ def test_parent_child_paths_cannot_be_owned_by_different_sites(
         DeletionPlanner(ledger).plan_delete(SITE["site_id"])
 
 
+@pytest.mark.parametrize("state", [
+    "provisioning", "needs-review", "failed", "suspended", None,
+])
+def test_foreign_unhealthy_site_blocks_deletion_planning(state):
+    ledger = Ledger()
+    ledger.records[1]["state"] = state
+    with pytest.raises(ValueError, match="Unhealthy or incomplete"):
+        DeletionPlanner(ledger).plan_delete(SITE["site_id"])
+
+
 def test_sibling_prefix_is_not_a_nested_path_claim():
     ledger = Ledger()
     ledger.records[1]["resources"][0] = SITE["resources"][0] + "-sibling"
