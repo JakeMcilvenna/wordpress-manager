@@ -389,17 +389,23 @@ class DisposableUbuntuWebsiteBackend:
 
     def list_sites(self):
         disposable_only()
+        if RECORDS.is_symlink():
+            raise ValueError("Unsafe site ledger directory symlink")
         if not RECORDS.is_dir():
             return []
         sites = []
-        for record in sorted(RECORDS.glob("wm-*.json")):
-            if record.is_symlink():
-                raise ValueError("Unsafe site ledger symlink")
+        for record in sorted(RECORDS.glob("*.json")):
+            if (record.is_symlink() or not record.is_file() or
+                    not ID.fullmatch(record.stem)):
+                raise ValueError("Unsafe or unrecognized site ledger record")
             info = read_record(record.stem)
-            if info and info.get("state") == "created":
-                sites.append({"id": info["site_id"], "domain": info["domain"],
-                              "name": info["title"], "state": "healthy",
-                              "url": f"http://{info['domain']}:{PORT}/"})
+            # An interrupted installation still owns resources. Never hide it
+            # from the shared availability check as though the slot were free.
+            if not isinstance(info, dict) or info.get("state") != "created":
+                raise ValueError("Incomplete native site ledger requires operator review")
+            sites.append({"id": info["site_id"], "domain": info["domain"],
+                          "name": info["title"], "state": "healthy",
+                          "url": f"http://{info['domain']}:{PORT}/"})
         return sites
 
     def plan(self, spec):
