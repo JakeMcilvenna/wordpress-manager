@@ -263,6 +263,51 @@ def test_backup_and_restore_reject_cross_site_resource_or_domain_claims():
         BackupPlanner(ledger).plan_backup(SITE["site_id"])
 
 
+@pytest.mark.parametrize("resource", [
+    "/", "/srv/", "/srv//site", "/srv/./site", "/srv/site/../other",
+    "/srv/site\\\\other",
+])
+def test_backup_and_restore_reject_aliased_paths_even_in_consistent_ledger(resource):
+    ledger = Ledger()
+    ledger.site_records[SITE["site_id"]]["resources"][0] = resource
+    ledger.backups[BACKUP_ID]["resources"][0] = resource
+    planner = BackupPlanner(ledger)
+    with pytest.raises(ValueError, match="resource path"):
+        planner.plan_backup(SITE["site_id"])
+    with pytest.raises(ValueError, match="resource path"):
+        planner.plan_restore(SITE["site_id"], BACKUP_ID)
+
+
+@pytest.mark.parametrize("foreign_path", [
+    SITE["resources"][0] + "/uploads",
+    "/srv",
+])
+@pytest.mark.parametrize("reverse_inventory", [False, True])
+def test_backup_and_restore_reject_nested_cross_site_paths(
+    foreign_path, reverse_inventory
+):
+    ledger = Ledger()
+    ledger.site_records[OTHER["site_id"]]["resources"][0] = foreign_path
+    if reverse_inventory:
+        ledger.sites = lambda: [
+            deepcopy(ledger.site_records[OTHER["site_id"]]),
+            deepcopy(ledger.site_records[SITE["site_id"]]),
+        ]
+    planner = BackupPlanner(ledger)
+    with pytest.raises(ValueError, match="Nested path"):
+        planner.plan_backup(SITE["site_id"])
+    with pytest.raises(ValueError, match="Nested path"):
+        planner.plan_restore(SITE["site_id"], BACKUP_ID)
+
+
+def test_sibling_path_prefix_does_not_block_backup_planning():
+    ledger = Ledger()
+    ledger.site_records[OTHER["site_id"]]["resources"][0] = (
+        SITE["resources"][0] + "-sibling"
+    )
+    assert BackupPlanner(ledger).plan_backup(SITE["site_id"])["executable"] is False
+
+
 def test_backup_and_restore_require_complete_consistent_site_snapshot():
     ledger = Ledger()
     planner = BackupPlanner(ledger)
