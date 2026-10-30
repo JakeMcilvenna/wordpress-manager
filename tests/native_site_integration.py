@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -198,6 +199,32 @@ def main():
         assert native.read_record(alias_plan["site_id"]) is None
     finally:
         alias_config.unlink()
+
+    # An effective sites-enabled/* vhost can be an extensionless symlink to
+    # a config outside sites-available. Its aliases are still owned by Nginx.
+    enabled_plan = restarted.plan(
+        "Enabled alias", "admin@enabled-alias.test", "enabled-alias.test", "8.3"
+    )
+    enabled_link = native.NGINX_ENABLED / "wm-unmanaged-external"
+    with tempfile.TemporaryDirectory(prefix="wm-unmanaged-nginx-") as temporary:
+        external_config = Path(temporary) / "external-vhost"
+        external_config.write_text(
+            "server { listen 127.0.0.1:18080; "
+            "server_name OTHER.TEST ENABLED-ALIAS.TEST; }\n"
+        )
+        enabled_link.symlink_to(external_config)
+        try:
+            try:
+                restarted.create(enabled_plan, native.CONFIRMATION)
+            except ValueError as exc:
+                assert "already configured" in str(exc)
+            else:
+                raise AssertionError("Enabled Nginx symlink alias was adopted")
+            assert native.read_record(enabled_plan["site_id"]) is None
+        finally:
+            enabled_link.unlink()
+    check_site(domain)
+    check_site(second_domain)
 
     # Simulate a third site's interrupted ownership journal on the real guest.
     # Both service planning and a direct root executor call must fail closed,
