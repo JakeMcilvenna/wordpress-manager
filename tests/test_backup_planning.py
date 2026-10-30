@@ -341,7 +341,7 @@ def test_backup_and_restore_require_complete_consistent_site_snapshot():
         BackupPlanner(ledger).plan_backup(SITE["site_id"])
 
     ledger = Ledger()
-    ledger.sites = lambda: [dict(SITE, resources=["different-resource"]), deepcopy(OTHER)]
+    ledger.sites = lambda: [dict(SITE, resources=["/srv/different-resource"]), deepcopy(OTHER)]
     with pytest.raises(ValueError, match="changed"):
         BackupPlanner(ledger).plan_restore(SITE["site_id"], BACKUP_ID)
 
