@@ -118,6 +118,52 @@ def test_foreign_or_ambiguous_resource_claims_block_deletion(mutation):
         DeletionPlanner(ledger).plan_delete(SITE["site_id"])
 
 
+@pytest.mark.parametrize("resource", [
+    "/", "/srv/wordpress-manager-sites/", "/srv//wordpress-manager-sites/site",
+    "/srv/wordpress-manager-sites/./site",
+    "/srv/wordpress-manager-sites/site/../other",
+    "/srv/wordpress-manager-sites/site\\other",
+])
+def test_noncanonical_resource_paths_fail_even_with_matching_records(resource):
+    ledger = Ledger()
+    ledger.selected["resources"][0] = resource
+    ledger.records[0] = deepcopy(ledger.selected)
+    ledger.recovery["resources"] = deepcopy(ledger.selected["resources"])
+    with pytest.raises(ValueError, match="resource path"):
+        DeletionPlanner(ledger).plan_delete(SITE["site_id"])
+
+
+@pytest.mark.parametrize("foreign_path", [
+    SITE["resources"][0] + "/uploads",
+    "/srv/wordpress-manager-sites",
+])
+@pytest.mark.parametrize("reverse_inventory", [False, True])
+def test_parent_child_paths_cannot_be_owned_by_different_sites(
+    foreign_path, reverse_inventory
+):
+    ledger = Ledger()
+    ledger.records[1]["resources"][0] = foreign_path
+    if reverse_inventory:
+        ledger.records.reverse()
+    with pytest.raises(ValueError, match="Nested path"):
+        DeletionPlanner(ledger).plan_delete(SITE["site_id"])
+
+
+def test_sibling_prefix_is_not_a_nested_path_claim():
+    ledger = Ledger()
+    ledger.records[1]["resources"][0] = SITE["resources"][0] + "-sibling"
+    assert DeletionPlanner(ledger).plan_delete(SITE["site_id"])["executable"] is False
+
+
+def test_same_site_nested_path_claims_are_not_cross_site_conflicts():
+    ledger = Ledger()
+    nested = SITE["resources"][0] + "/uploads"
+    ledger.selected["resources"].append(nested)
+    ledger.records[0] = deepcopy(ledger.selected)
+    ledger.recovery["resources"] = deepcopy(ledger.selected["resources"])
+    assert DeletionPlanner(ledger).plan_delete(SITE["site_id"])["executable"] is False
+
+
 @pytest.mark.parametrize("state", [
     "running", "queued", "interrupted", "failed", "needs-review", None,
 ])
