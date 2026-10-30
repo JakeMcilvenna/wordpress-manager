@@ -227,3 +227,39 @@ def test_recovery_metadata_changes_plan_fingerprint_without_authorizing_delete()
     changed = DeletionPlanner(ledger).plan_delete(SITE["site_id"])
     assert original["snapshot_digest"] != changed["snapshot_digest"]
     assert changed["executable"] is False
+
+
+def test_review_fingerprint_binds_foreign_ownership_and_finished_jobs():
+    ledger = Ledger()
+    planner = DeletionPlanner(ledger)
+    baseline = planner.plan_delete(SITE["site_id"])["snapshot_digest"]
+
+    ledger.records[1]["resources"].append("/srv/foreign-extra")
+    assert planner.plan_delete(SITE["site_id"])["snapshot_digest"] != baseline
+
+    ledger.records[1]["resources"].pop()
+    ledger.operations.append({"state": "cancelled", "job_id": "old-job"})
+    assert planner.plan_delete(SITE["site_id"])["snapshot_digest"] != baseline
+
+
+def test_review_fingerprint_is_stable_across_ledger_enumeration_order():
+    ledger = Ledger()
+    ledger.operations = [
+        {"state": "succeeded", "job_id": "job-a"},
+        {"state": "cancelled", "job_id": "job-b"},
+    ]
+    planner = DeletionPlanner(ledger)
+    original = planner.plan_delete(SITE["site_id"])["snapshot_digest"]
+    ledger.records.reverse()
+    ledger.operations.reverse()
+    assert planner.plan_delete(SITE["site_id"])["snapshot_digest"] == original
+
+
+def test_nonfinite_or_unserializable_completed_job_fails_closed():
+    ledger = Ledger()
+    ledger.operations = [{"state": "succeeded", "metadata": float("nan")}]
+    with pytest.raises(ValueError, match="journal"):
+        DeletionPlanner(ledger).plan_delete(SITE["site_id"])
+    ledger.operations = [{"state": "succeeded", "metadata": object()}]
+    with pytest.raises(ValueError, match="journal"):
+        DeletionPlanner(ledger).plan_delete(SITE["site_id"])
