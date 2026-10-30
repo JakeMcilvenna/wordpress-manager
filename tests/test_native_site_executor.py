@@ -208,6 +208,36 @@ def test_tampered_created_ledger_cannot_free_or_adopt_resources(
         )
 
 
+@pytest.mark.parametrize(("config", "claimed"), [
+    ("server { server_name other.test one.test; }", True),
+    ("server_name other.test\\n one.test;", True),
+    ("server_name *.test;", True),
+    ("server_name .one.test;", True),
+    ("server_name one.test;", True),
+    ("server_name someone.test;", False),
+    ("server_name other.test; # server_name one.test;", False),
+])
+def test_nginx_aliases_and_wildcards_cannot_hide_domain_ownership(config, claimed):
+    assert native._nginx_claims_domain(config, "one.test") is claimed
+
+
+@pytest.mark.parametrize("entry", [
+    ".orphaned-record", "wm-000000000000.json.bak",
+    "unexpected.txt", "subdirectory",
+])
+def test_native_inventory_rejects_unrecognized_entries(monkeypatch, tmp_path, entry):
+    """A partial or renamed journal must not silently disappear from inventory."""
+    monkeypatch.setattr(native, "disposable_only", lambda: None)
+    monkeypatch.setattr(native, "RECORDS", tmp_path)
+    path = tmp_path / entry
+    if entry == "subdirectory":
+        path.mkdir()
+    else:
+        path.write_text("unreviewed ownership")
+    with pytest.raises(ValueError, match="unrecognized"):
+        native.DisposableUbuntuWebsiteBackend().list_sites()
+
+
 def test_non_object_native_ledger_is_not_trusted(monkeypatch, tmp_path):
     monkeypatch.setattr(native, "disposable_only", lambda: None)
     monkeypatch.setattr(native, "RECORDS", tmp_path)
