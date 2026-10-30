@@ -144,7 +144,11 @@ resources and state. Partial failures are marked `needs-review`; an
 incomplete, ambiguous or symlinked ownership record blocks further native
 site planning until an operator investigates it. The prototype **does not
 automatically delete or roll back** partially created resources. It refuses
-to adopt or overwrite existing paths/users/databases.
+to adopt or overwrite existing paths/users/databases. Nginx ownership preflight
+checks aliases and both leading and trailing wildcard names; regex names and
+`$hostname` are treated as ambiguous claims and block new sites rather than
+risking a silent domain collision. This conservative check is not a complete
+parser of arbitrary nested Nginx includes.
 
 The real integration test `tests/native_site_integration.py` runs after
 stack installation inside the existing disposable `tests/stack_integration.py`
