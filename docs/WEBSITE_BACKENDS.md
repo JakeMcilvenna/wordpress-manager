@@ -175,9 +175,13 @@ wired to Flask, the Docker adapter, the Ubuntu backend or the root socket.
 reads the trusted server-side site record, **complete** cross-site ownership
 inventory, operation journal and recovery-point metadata. It fails closed
 when the selected site is unhealthy, records disagree, another site claims
-the same domain or resource, any operation is unfinished/ambiguous, or the
-recovery point does not exactly match the selected site's identity and owned
-resources. The review requires a typed `DELETE <site-id> <domain>`
+the same domain or resource (including nested filesystem paths owned by
+another site), any operation is unfinished/ambiguous, or the recovery point
+does not exactly match the selected site's identity and owned resources.
+Noncanonical filesystem claims such as dot segments, double separators and
+trailing slashes are rejected before ownership comparison. These are lexical
+checks only: they do not resolve symlinks or replace a locked, filesystem-aware
+ownership verification in any future executor. The review requires a typed `DELETE <site-id> <domain>`
 confirmation, a snapshot digest and explicit gates for locking, verified
 restorability, rollback and audit.
 
