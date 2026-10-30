@@ -141,8 +141,10 @@ class DeletionPlanner:
         site_ids = set()
         domains = set()
         found = 0
+        validated_sites = []
         for raw in records:
             candidate = _site(raw)
+            validated_sites.append(candidate)
             # A foreign site still provisioning or awaiting review may have
             # unrecorded resources. Do not plan destructive work around it.
             if candidate["state"] != "healthy":
@@ -176,12 +178,24 @@ class DeletionPlanner:
         jobs = self.inventory.jobs()
         if not isinstance(jobs, (list, tuple)) or len(jobs) > 10000:
             raise ValueError("Complete operation journal required")
+        completed_jobs = []
         for job in jobs:
             if not isinstance(job, dict) or job.get("state") not in _FINISHED_JOBS:
                 raise ValueError("Unfinished or ambiguous site operation requires review")
+            try:
+                completed_jobs.append(json.dumps(
+                    job, sort_keys=True, separators=(",", ":"), allow_nan=False
+                ))
+            except (TypeError, ValueError):
+                raise ValueError("Invalid completed operation journal") from None
 
         recovery = _recovery(self.inventory.recovery_point(site_id), selected)
-        snapshot = {"site": selected, "recovery": recovery}
+        # Review evidence only; not a lock or authorization to delete.
+        snapshot = {
+            "site": selected, "recovery": recovery,
+            "inventory": sorted(validated_sites, key=lambda item: item["site_id"]),
+            "completed_jobs": sorted(completed_jobs),
+        }
         fingerprint = sha256(json.dumps(
             snapshot, sort_keys=True, separators=(",", ":")
         ).encode("utf-8")).hexdigest()
