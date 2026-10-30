@@ -65,9 +65,10 @@ configuration, and journal operations with rollback on failure.
 WebsiteService now checks the selected backend's actual managed-site inventory,
 rather than refusing every new plan whenever any site exists. Unique site IDs
 and canonical domains must not collide. Inconsistent inventories fail closed,
-including missing or non-boolean installation state, duplicate ownership IDs,
-duplicate canonical domains, and empty site identities. Both planning and
-confirmation recheck this inventory before invoking the platform adapter.
+including missing or non-boolean installation state, mismatched reported site
+counts, duplicate ownership IDs/domains, missing or noncanonical domains,
+unhealthy site records, and empty/ambiguous site identities. Both planning
+and confirmation recheck this inventory before invoking the platform adapter.
 
 This does not add dynamic Docker slots: the current local provisioner still
 owns one fixed site ID and prevents additional installations. The native
@@ -162,8 +163,11 @@ invokes the disposable test helper from Flask or weakens its guest-only guard.
 
 1. The common model and validation cover duplicates, site identity, owned
    resources, job states and recovery across both environments.
-2. Docker integration creates at least two independent test sites, proves
-   they survive restarts and shows that one failure cannot change another.
+2. Keep the existing single-slot Docker preview for local dashboard tests;
+   do not build a second dynamic Docker multi-site hosting implementation.
+   Instead, disposable Ubuntu integration creates multiple independent native
+   sites, proves isolation and persistence, and checks that failure cannot
+   change another site's resources.
 3. Ubuntu's executor in a **disposable Ubuntu 24.04/systemd** test image
    creates Nginx config, Linux/PHP-FPM identity, MariaDB database/user,
    WordPress files and WP-CLI install through the same interface.
