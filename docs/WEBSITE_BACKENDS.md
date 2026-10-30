@@ -164,3 +164,44 @@ invokes the disposable test helper from Flask or weakens its guest-only guard.
    production PR expose website operations on the real VPS.
 
 See `AGENTS.md` for rules every future development session must follow.
+
+
+## Backup and restore: ownership preflight only (not executable)
+
+The shared `wordpress_manager/backup_planning.py` module introduces a
+**read-only, fail-closed planning contract** for later backup and restore
+development. It does **not** create backups, read archive bytes, restore a
+site, change WordPress, or enable any dashboard, Docker, Ubuntu or Hetzner
+operation.
+
+A trusted server-side ownership inventory must supply the site ID, canonical
+domain, backend, health state and exact owned resources. A restore additionally
+requires a server-retrieved versioned backup manifest with the same site ID,
+domain, backend and resource inventory, a bounded archive size, a SHA-256
+checksum field and a UTC timestamp. The trusted adapter must also provide a
+**complete site inventory and operation journal** (`sites()` and `jobs()`).
+Planning refuses duplicate site IDs, domains, resource claims (including
+parent/child filesystem paths owned by different sites), noncanonical path
+spellings, relative paths, untyped or malformed opaque resource identifiers,
+a selected-site snapshot mismatch, missing inventory, and unfinished
+or ambiguous jobs. Lexical checks cannot establish real filesystem ownership
+or symlink safety; a future executor must recheck under an exclusive lock. These
+read-only checks are not locks and must be repeated atomically by any future
+executor. Cross-site or ambiguous ownership, unknown manifest fields, invalid
+metadata and unhealthy/partially installed sites fail closed. The review plan includes an explicit target-site confirmation and is
+always marked `executable: false`. Both execution entrypoints raise
+`WebsiteOperationUnavailable` unconditionally.
+
+The manifest digest is **not an authentication signature or archive integrity
+verification**. A separate, read-only `verify_archive_stream` helper can
+compare the SHA-256 and exact byte count of a **trusted server-opened binary
+stream** against a validated manifest. It requests at most 1 MiB per read,
+rejects truncation and appended data, and never opens a path, extracts files,
+or performs a write. It does **not** authenticate the manifest or ownership
+ledger, validate the archive format or detect unsafe entries such as symlinks
+and traversal paths. The future privileged executor must authenticate the
+trusted backup ledger and verify archive format and entries, then prove
+site-scoped locking, safe staging, rollback, retention and recovery in real
+disposable Ubuntu and local Docker integration tests. No arbitrary client
+archive path, target directory, Docker command or shell argument is accepted.
+Never enable deletion or restore from these plans alone.
