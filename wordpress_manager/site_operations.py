@@ -119,25 +119,40 @@ class WebsiteService:
         installed = status.get("installed")
         if type(installed) is not bool or installed != bool(sites):
             raise ValueError("Website inventory is inconsistent; operator review required")
+        # Some backends expose a site count. If present it must be exact,
+        # rather than a stale or truthy value masking missing ownership.
+        if "sites" in status and (
+            type(status["sites"]) is not int or status["sites"] != len(sites)
+        ):
+            raise ValueError("Website inventory count is inconsistent")
         seen_ids = set()
         seen_domains = set()
         for site in sites:
             if (not isinstance(site, dict) or
                     not isinstance(site.get("id"), str) or
-                    not site["id"].strip()):
+                    not site["id"] or site["id"] != site["id"].strip()):
                 raise ValueError("Website inventory contains an invalid site identity")
+            # A missing domain or unhealthy record cannot prove that a new
+            # installation will not adopt an existing site's resources.
+            if site.get("state") != "healthy":
+                raise ValueError("Website inventory contains an incomplete site")
             domain = site.get("domain")
-            if domain is not None and (not isinstance(domain, str) or not domain.strip()):
+            if not isinstance(domain, str):
                 raise ValueError("Website inventory contains an invalid domain")
-            canonical_domain = domain.lower().rstrip(".") if domain is not None else None
+            try:
+                canonical_domain = WebsiteSpec.from_fields(
+                    "Inventory review", "inventory@internal.test", domain, "8.3"
+                ).domain
+            except ValueError:
+                raise ValueError("Website inventory contains an invalid domain") from None
+            if domain != canonical_domain:
+                raise ValueError("Website inventory contains a noncanonical domain")
             # Duplicate records are ambiguous ownership, even when neither
             # collides with the new site. Never proceed on an unsafe inventory.
-            if (site["id"] in seen_ids or
-                    canonical_domain is not None and canonical_domain in seen_domains):
+            if site["id"] in seen_ids or canonical_domain in seen_domains:
                 raise ValueError("Website inventory contains duplicate site ownership")
             seen_ids.add(site["id"])
-            if canonical_domain is not None:
-                seen_domains.add(canonical_domain)
+            seen_domains.add(canonical_domain)
             # Site IDs represent owned resources; domains are independently
             # unique even if a buggy adapter were to assign a different ID.
             if site["id"] == plan.site_id or canonical_domain == plan.spec.domain:
