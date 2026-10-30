@@ -54,6 +54,7 @@ RECORDS = STATE / "records"
 LOCK = STATE / ".lock"
 NGINX_AVAILABLE = Path("/etc/nginx/sites-available")
 NGINX_ENABLED = Path("/etc/nginx/sites-enabled")
+NGINX_CONF_D = Path("/etc/nginx/conf.d")
 PHP_ROOT = Path("/etc/php")
 CONFIRMATION = "CREATE NATIVE TEST SITE"
 PORT = 18080
@@ -188,6 +189,8 @@ def _nginx_claims_domain(config, domain):
     uncommented = re.sub(r"(?m)#[^\n]*$", "", config)
     for match in re.finditer(r"\bserver_name\s+([^;{}]+);", uncommented):
         for name in match.group(1).split():
+            # Nginx server names are case-insensitive, including aliases.
+            name = name.lower()
             if name == domain:
                 return True
             if name.startswith("*.") and domain.endswith(name[1:]):
@@ -195,6 +198,33 @@ def _nginx_claims_domain(config, domain):
             if name.startswith(".") and (domain == name[1:] or domain.endswith(name)):
                 return True
     return False
+
+
+def _check_nginx_domain_available(domain):
+    """Reject unmanaged Nginx aliases, including enabled symlink targets.
+
+    The sites-available directory is not the full effective Nginx config.
+    Ubuntu includes sites-enabled/* (even extensionless symlinks), and conf.d
+    includes *.conf. Broken links or unreadable included files are ambiguous
+    ownership and must not be treated as available capacity.
+    """
+    for root, all_names in ((NGINX_AVAILABLE, False), (NGINX_ENABLED, True),
+                            (NGINX_CONF_D, False)):
+        if not root.is_dir():
+            continue
+        for path in root.iterdir():
+            if not all_names and path.suffix != ".conf":
+                continue
+            if path.is_symlink() and not path.is_file():
+                raise ValueError("Unresolvable Nginx configuration link")
+            if not path.is_file():
+                continue
+            try:
+                config = path.read_text()
+            except (OSError, UnicodeError):
+                raise ValueError("Unable to inspect Nginx domain ownership") from None
+            if _nginx_claims_domain(config, domain):
+                raise ValueError("Domain is already configured in Nginx")
 
 
 def _preflight(plan):
@@ -229,13 +259,9 @@ def _preflight(plan):
     if _run("/usr/bin/mariadb", "--batch", "--skip-column-names",
             input_text=f"SELECT User FROM mysql.user WHERE User='wm_{plan.site_id[3:13]}';\n"):
         raise ValueError("Site database user already exists")
-    # Do not silently override existing Nginx domain ownership.
-    for root in (NGINX_AVAILABLE, Path("/etc/nginx/conf.d")):
-        if root.is_dir():
-            for path in root.iterdir():
-                if path.is_file() and not path.is_symlink() and path.suffix == ".conf":
-                    if _nginx_claims_domain(path.read_text(), plan.spec.domain):
-                        raise ValueError("Domain is already configured in Nginx")
+    # Check effective enabled vhosts as well as staged configs: Ubuntu
+    # sites-enabled/* may point outside sites-available and need no .conf suffix.
+    _check_nginx_domain_available(plan.spec.domain)
     return paths
 
 
