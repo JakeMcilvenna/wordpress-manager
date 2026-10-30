@@ -1,5 +1,6 @@
 """Native Ubuntu website executor regression tests; no guest privileges required."""
 from pathlib import Path
+import json
 import re
 
 import pytest
@@ -121,3 +122,35 @@ def test_ownership_journal_has_no_automatic_destructive_cleanup():
             "wordpress_manager/ubuntu_sites.py").read_text()
     assert "WebsiteOperationUnavailable" in prod
     assert "def _disabled" in prod
+
+
+@pytest.mark.parametrize("state", ["provisioning", "needs-review"])
+def test_incomplete_native_ledger_blocks_other_site_plans(monkeypatch, tmp_path, state):
+    """An interrupted site is still owned; never silently hide its record."""
+    monkeypatch.setattr(native, "disposable_only", lambda: None)
+    monkeypatch.setattr(native, "RECORDS", tmp_path)
+    site_id = native.site_id_for("partial.test")
+    (tmp_path / (site_id + ".json")).write_text(json.dumps({
+        "site_id": site_id, "domain": "partial.test",
+        "title": "Interrupted site", "state": state,
+    }))
+    backend = native.DisposableUbuntuWebsiteBackend()
+    with pytest.raises(ValueError, match="Incomplete native site ledger"):
+        backend.inspect()
+    with pytest.raises(ValueError, match="Incomplete native site ledger"):
+        WebsiteService(backend).plan(
+            "Unrelated", "admin@other.test", "other.test", "8.3"
+        )
+
+
+def test_unknown_or_symlinked_native_ledger_blocks_planning(monkeypatch, tmp_path):
+    monkeypatch.setattr(native, "disposable_only", lambda: None)
+    monkeypatch.setattr(native, "RECORDS", tmp_path)
+    (tmp_path / "unexpected.json").write_text("{}")
+    backend = native.DisposableUbuntuWebsiteBackend()
+    with pytest.raises(ValueError, match="unrecognized"):
+        backend.list_sites()
+    (tmp_path / "unexpected.json").unlink()
+    (tmp_path / "wm-000000000000.json").symlink_to(tmp_path / "missing")
+    with pytest.raises(ValueError, match="Unsafe"):
+        backend.list_sites()
