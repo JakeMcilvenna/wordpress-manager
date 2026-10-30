@@ -263,3 +263,37 @@ def test_nonfinite_or_unserializable_completed_job_fails_closed():
     ledger.operations = [{"state": "succeeded", "metadata": object()}]
     with pytest.raises(ValueError, match="journal"):
         DeletionPlanner(ledger).plan_delete(SITE["site_id"])
+
+
+@pytest.mark.parametrize("resource", [
+    "srv/wordpress-manager-sites/wm-aaaaaaaaaaaa",
+    "../srv/wordpress-manager-sites/wm-aaaaaaaaaaaa",
+    "linux-user:wmsaaaaaaaaaa/../root",
+    "mariadb-user:..",
+    "linux-user:",
+    "untyped-identity",
+    "linux-user:valid\\backslash",
+    "linux-user:valid:extra",
+    "linux-user:valid name",
+])
+@pytest.mark.parametrize("foreign", [False, True])
+def test_relative_and_malformed_opaque_resource_claims_fail_closed(resource, foreign):
+    ledger = Ledger()
+    if foreign:
+        ledger.records[1]["resources"][0] = resource
+    else:
+        ledger.selected["resources"][0] = resource
+        ledger.records[0] = deepcopy(ledger.selected)
+        ledger.recovery["resources"] = deepcopy(ledger.selected["resources"])
+    with pytest.raises(ValueError, match="resource identifier"):
+        DeletionPlanner(ledger).plan_delete(SITE["site_id"])
+
+
+def test_canonical_typed_resource_claims_remain_accepted():
+    ledger = Ledger()
+    ledger.selected["resources"].append("php-fpm-pool:wm_aaaaaaaaaaaa.conf")
+    ledger.records[0] = deepcopy(ledger.selected)
+    ledger.recovery["resources"] = deepcopy(ledger.selected["resources"])
+    plan = DeletionPlanner(ledger).plan_delete(SITE["site_id"])
+    assert plan["executable"] is False
+    assert "php-fpm-pool:wm_aaaaaaaaaaaa.conf" in plan["resources"]
