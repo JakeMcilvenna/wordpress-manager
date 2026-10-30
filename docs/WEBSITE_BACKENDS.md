@@ -192,6 +192,14 @@ metadata and unhealthy/partially installed sites fail closed. The review plan in
 always marked `executable: false`. Both execution entrypoints raise
 `WebsiteOperationUnavailable` unconditionally.
 
+Both backup and restore review plans also include a `snapshot_digest` over
+canonicalized ownership claims for **every** site and all completed operation
+records. The digest changes when a foreign site's ownership or completed-job
+journal changes, but remains stable when only inventory enumeration order
+changes. This is a read-only review fingerprint, **not** a ledger signature,
+exclusive lock, replay protection, or permission to execute. A future
+executor must revalidate authoritative state under its own lock.
+
 The manifest digest is **not an authentication signature or archive integrity
 verification**. A separate, read-only `verify_archive_stream` helper can
 compare the SHA-256 and exact byte count of a **trusted server-opened binary
