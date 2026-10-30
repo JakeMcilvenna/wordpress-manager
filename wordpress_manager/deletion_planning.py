@@ -18,7 +18,7 @@ _BACKUP_ID = re.compile(r"bkp-[0-9a-f]{32}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
 # Opaque resource keys must be namespaced, never disguised relative paths.
 # Future executors must still re-derive and verify every resource.
-_OPAQUE_RESOURCE = re.compile(r"[a-z][a-z0-9-]{1,39}:[A-Za-z0-9_.-]{1,128}\Z")
+_OPAQUE_RESOURCE = re.compile(r"[a-z][a-z0-9-]{1,39}:[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}\Z")
 _FINISHED_JOBS = frozenset(("succeeded", "cancelled"))
 
 
