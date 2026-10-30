@@ -366,7 +366,7 @@ def read_record(site_id):
     if not record.is_file() or record.is_symlink():
         return None
     value = json.loads(record.read_text())
-    if value.get("site_id") != site_id:
+    if not isinstance(value, dict) or value.get("site_id") != site_id:
         raise ValueError("Site ledger identity mismatch")
     return value
 
@@ -403,6 +403,23 @@ class DisposableUbuntuWebsiteBackend:
             # from the shared availability check as though the slot were free.
             if not isinstance(info, dict) or info.get("state") != "created":
                 raise ValueError("Incomplete native site ledger requires operator review")
+            # A 'created' flag alone is not proof of resource ownership.
+            # Verify the complete journal against the deterministic server-side
+            # plan before reporting it as healthy or allowing another install.
+            if set(info) != {"site_id", "domain", "php", "title", "resources", "state"}:
+                raise ValueError("Incomplete native site ownership record")
+            try:
+                spec = WebsiteSpec.from_fields(
+                    info["title"], "inventory@internal.test",
+                    info["domain"], info["php"],
+                )
+                expected = make_plan(spec)
+            except (TypeError, ValueError):
+                raise ValueError("Invalid native site ownership record") from None
+            if (info["site_id"] != expected.site_id or
+                    info["domain"] != spec.domain or
+                    info["resources"] != list(expected.resources)):
+                raise ValueError("Native site ownership record mismatch")
             sites.append({"id": info["site_id"], "domain": info["domain"],
                           "name": info["title"], "state": "healthy",
                           "url": f"http://{info['domain']}:{PORT}/"})
