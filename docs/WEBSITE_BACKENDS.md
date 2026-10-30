@@ -179,7 +179,10 @@ the same domain or resource (including nested filesystem paths owned by
 another site), any operation is unfinished/ambiguous, or the recovery point
 does not exactly match the selected site's identity and owned resources.
 Noncanonical filesystem claims such as dot segments, double separators and
-trailing slashes are rejected before ownership comparison. These are lexical
+trailing slashes are rejected before ownership comparison. Non-path resources
+must be explicitly namespaced opaque identifiers (for example,
+`linux-user:wmsaaaaaaaaaa`), not relative paths, dot-prefixed names or
+untyped claims; this prevents lexical aliases from bypassing ownership checks. These are lexical
 checks only: they do not resolve symlinks or replace a locked, filesystem-aware
 ownership verification in any future executor. The review requires a typed `DELETE <site-id> <domain>`
 confirmation, a review-only snapshot digest covering the selected site, recovery
