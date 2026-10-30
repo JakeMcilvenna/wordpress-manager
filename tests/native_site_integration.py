@@ -90,22 +90,65 @@ def main():
     assert (native.PHP_ROOT / "8.3/fpm/pool.d" / (plan["site_id"] + ".conf")).is_file()
     check_site(domain)
 
-    listed = service.list_sites()
-    assert len(listed) == 1 and listed[0]["domain"] == domain
-    for call in (lambda: service.create(plan, native.CONFIRMATION),
-                 lambda: service.plan("Duplicate", "admin@native-one.test",
-                                      domain, "8.3")):
+    # Real multi-site integration: the same guarded Ubuntu executor must
+    # provision two independent WordPress sites, not a second Docker backend.
+    first_record = native.read_record(plan["site_id"])
+    second_domain = "native-two.test"
+    second_plan = service.plan(
+        "Second native WordPress", "admin@native-two.test", second_domain, "8.3"
+    )
+    assert second_plan["site_id"] != plan["site_id"]
+    assert set(second_plan["resources"]).isdisjoint(plan["resources"])
+    second_result = service.create(second_plan, native.CONFIRMATION)
+    assert second_result["installed"] is True
+    assert second_result["domain"] == second_domain
+    assert second_result["password"] and len(second_result["password"]) >= 30
+    assert native.read_record(plan["site_id"]) == first_record
+    assert native.read_record(second_plan["site_id"])["state"] == "created"
+    check_site(domain)
+    check_site(second_domain)
+
+    for current_plan in (plan, second_plan):
+        current_id = current_plan["site_id"]
+        account = "wms" + current_id[3:13]
+        database = "wm_" + current_id[3:13]
+        assert command("/usr/sbin/runuser", "-u", account, "--",
+                       "/usr/local/bin/wp", "core", "is-installed",
+                       "--path=" + str(native.ROOT / current_id)) == ""
+        assert command("/usr/bin/mariadb", "-N", "-B", "-e",
+                       "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA "
+                       "WHERE SCHEMA_NAME='" + database + "';") == database
+        assert (native.PHP_ROOT / "8.3/fpm/pool.d" / (current_id + ".conf")).is_file()
+
+    # A service restart must not lose either site or its independent routing.
+    subprocess.check_call(["/usr/bin/systemctl", "restart", "nginx"], timeout=60)
+    subprocess.check_call(["/usr/bin/systemctl", "restart", "php8.3-fpm"], timeout=60)
+    restarted = WebsiteService(native.DisposableUbuntuWebsiteBackend())
+    listed = restarted.list_sites()
+    assert {site["domain"] for site in listed} == {domain, second_domain}
+    assert restarted.inspect()["sites"] == 2
+    for current_plan in (plan, second_plan):
         try:
-            call()
+            restarted.create(current_plan, native.CONFIRMATION)
         except ValueError:
             pass
         else:
             raise AssertionError("Duplicate native install was not refused")
-    assert service.list_sites() == listed
-    assert native.read_record(plan["site_id"])["state"] == "created"
+    for existing_domain in (domain, second_domain):
+        try:
+            restarted.plan("Duplicate", "admin@" + existing_domain,
+                           existing_domain.upper(), "8.3")
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Duplicate native domain was not refused")
+    assert restarted.list_sites() == listed
+    assert native.read_record(plan["site_id"]) == first_record
     check_site(domain)
-    print("PASS: disposable Ubuntu guest installed isolated native WordPress, "
-          "preserved ownership and rejected forged/duplicate plans", flush=True)
+    check_site(second_domain)
+    print("PASS: disposable Ubuntu guest installed two isolated native WordPress "
+          "sites, preserved them across service restarts and rejected duplicate "
+          "or forged plans", flush=True)
 
 
 if __name__ == "__main__":
