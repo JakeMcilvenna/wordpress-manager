@@ -16,6 +16,9 @@ _SITE_ID = re.compile(r"[a-z][a-z0-9-]{2,63}\Z")
 _BACKEND = re.compile(r"[a-z][a-z0-9-]{1,39}\Z")
 _BACKUP_ID = re.compile(r"bkp-[0-9a-f]{32}\Z")
 _SHA256 = re.compile(r"[0-9a-f]{64}\Z")
+# Opaque resource keys must be namespaced, never disguised relative paths.
+# Future executors must still re-derive and verify every resource.
+_OPAQUE_RESOURCE = re.compile(r"[a-z][a-z0-9-]{1,39}:[A-Za-z0-9_.-]{1,128}\Z")
 _FINISHED_JOBS = frozenset(("succeeded", "cancelled"))
 
 
@@ -49,12 +52,17 @@ def _resources(value):
     # Reject alternate spellings before checking cross-site claims. A future
     # executor must separately validate symlinks and real paths under a lock.
     for resource in value:
-        if resource.startswith("/") and (
-            resource == "/" or resource.endswith("/") or "//" in resource
-            or "\\" in resource
-            or any(part in (".", "..") for part in resource.split("/"))
-        ):
-            raise ValueError("Ambiguous owned resource path")
+        if resource.startswith("/"):
+            if (
+                resource == "/" or resource.endswith("/") or "//" in resource
+                or "\\" in resource
+                or any(part in (".", "..") for part in resource.split("/"))
+            ):
+                raise ValueError("Ambiguous owned resource path")
+        elif _OPAQUE_RESOURCE.fullmatch(resource) is None:
+            # Relative paths and untyped identifiers cannot be compared
+            # reliably against filesystem, database and account claims.
+            raise ValueError("Ambiguous owned resource identifier")
     return tuple(value)
 
 
