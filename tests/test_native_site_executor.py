@@ -154,3 +154,64 @@ def test_unknown_or_symlinked_native_ledger_blocks_planning(monkeypatch, tmp_pat
     (tmp_path / "wm-000000000000.json").symlink_to(tmp_path / "missing")
     with pytest.raises(ValueError, match="Unsafe"):
         backend.list_sites()
+
+
+def test_complete_native_ledger_matches_deterministic_owned_resources(monkeypatch, tmp_path):
+    """Only a complete, server-derived ownership journal is healthy."""
+    monkeypatch.setattr(native, "disposable_only", lambda: None)
+    monkeypatch.setattr(native, "RECORDS", tmp_path)
+    plan = native.make_plan(spec())
+    record = {
+        "site_id": plan.site_id, "domain": plan.spec.domain,
+        "php": plan.spec.php, "title": plan.spec.title,
+        "resources": list(plan.resources), "state": "created",
+    }
+    path = tmp_path / (plan.site_id + ".json")
+    path.write_text(json.dumps(record))
+    backend = native.DisposableUbuntuWebsiteBackend()
+    assert backend.list_sites()[0]["domain"] == "one.test"
+    assert backend.inspect()["sites"] == 1
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda record: record.pop("resources"),
+    lambda record: record.update(resources=[]),
+    lambda record: record.update(resources=["/etc/passwd"]),
+    lambda record: record.update(domain="other.test"),
+    lambda record: record.update(domain="ONE.TEST"),
+    lambda record: record.update(php="8.4"),
+    lambda record: record.update(php="9.9"),
+    lambda record: record.update(title=""),
+    lambda record: record.update(site_id=native.site_id_for("other.test")),
+    lambda record: record.update(unexpected="unreviewed"),
+])
+def test_tampered_created_ledger_cannot_free_or_adopt_resources(
+    monkeypatch, tmp_path, mutation
+):
+    """A forged 'created' record must not permit unrelated site planning."""
+    monkeypatch.setattr(native, "disposable_only", lambda: None)
+    monkeypatch.setattr(native, "RECORDS", tmp_path)
+    plan = native.make_plan(spec())
+    record = {
+        "site_id": plan.site_id, "domain": plan.spec.domain,
+        "php": plan.spec.php, "title": plan.spec.title,
+        "resources": list(plan.resources), "state": "created",
+    }
+    mutation(record)
+    (tmp_path / (plan.site_id + ".json")).write_text(json.dumps(record))
+    backend = native.DisposableUbuntuWebsiteBackend()
+    with pytest.raises(ValueError, match="ownership|identity"):
+        backend.list_sites()
+    with pytest.raises(ValueError, match="ownership|identity"):
+        WebsiteService(backend).plan(
+            "Unrelated", "admin@other.test", "other.test", "8.3"
+        )
+
+
+def test_non_object_native_ledger_is_not_trusted(monkeypatch, tmp_path):
+    monkeypatch.setattr(native, "disposable_only", lambda: None)
+    monkeypatch.setattr(native, "RECORDS", tmp_path)
+    site_id = native.site_id_for("one.test")
+    (tmp_path / (site_id + ".json")).write_text("[]")
+    with pytest.raises(ValueError, match="identity"):
+        native.DisposableUbuntuWebsiteBackend().list_sites()
