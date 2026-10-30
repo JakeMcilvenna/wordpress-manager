@@ -120,6 +120,38 @@ def main():
                        "WHERE SCHEMA_NAME='" + database + "';") == database
         assert (native.PHP_ROOT / "8.3/fpm/pool.d" / (current_id + ".conf")).is_file()
 
+    # Isolation is more than distinct names: prove that the real site Linux
+    # accounts cannot read each other's database credentials, write to the
+    # other WordPress tree, or query the other MariaDB schema. WP-CLI uses
+    # each site's own wp-config.php credentials; no secrets enter argv/logs.
+    for own, foreign in ((plan, second_plan), (second_plan, plan)):
+        own_id, foreign_id = own["site_id"], foreign["site_id"]
+        own_user = "wms" + own_id[3:13]
+        own_db = "wm_" + own_id[3:13]
+        foreign_db = "wm_" + foreign_id[3:13]
+        own_path = str(native.ROOT / own_id)
+        foreign_path = str(native.ROOT / foreign_id)
+        assert command(
+            "/usr/sbin/runuser", "-u", own_user, "--",
+            "/usr/local/bin/wp", "db", "query", "SELECT DATABASE();",
+            "--skip-column-names", "--path=" + own_path,
+        ) == own_db
+        for args in (
+            ("/usr/bin/test", "-r", foreign_path + "/wp-config.php"),
+            ("/usr/bin/test", "-w", foreign_path),
+            ("/usr/local/bin/wp", "db", "query",
+             "SELECT COUNT(*) FROM `" + foreign_db + "`.wp_options;",
+             "--skip-column-names", "--path=" + own_path),
+        ):
+            denied = subprocess.run(
+                ["/usr/sbin/runuser", "-u", own_user, "--", *args],
+                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                timeout=60, check=False,
+            )
+            assert denied.returncode != 0, (
+                "Cross-site filesystem or database access was allowed"
+            )
+
     # A service restart must not lose either site or its independent routing.
     subprocess.check_call(["/usr/bin/systemctl", "restart", "nginx"], timeout=60)
     subprocess.check_call(["/usr/bin/systemctl", "restart", "php8.3-fpm"], timeout=60)
