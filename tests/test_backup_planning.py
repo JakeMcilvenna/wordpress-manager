@@ -374,6 +374,53 @@ def test_malformed_completed_job_metadata_blocks_backup_and_restore(metadata):
     assert ledger.writes == 0
 
 
+@pytest.mark.parametrize("metadata", [
+    {1: "integer key"}, {None: "null key"}, {True: "boolean key"},
+    {1.5: "float key"}, (1, 2), {"nested": ("not", "json")},
+    {"nested": {2: "coerced key"}}, b"binary",
+])
+def test_completed_job_metadata_cannot_be_silently_coerced_to_json(metadata):
+    ledger = Ledger()
+    ledger.jobs = lambda: [{"state": "succeeded", "metadata": metadata}]
+    planner = BackupPlanner(ledger)
+    with pytest.raises(ValueError, match="journal"):
+        planner.plan_backup(SITE["site_id"])
+    with pytest.raises(ValueError, match="journal"):
+        planner.plan_restore(SITE["site_id"], BACKUP_ID)
+    assert ledger.writes == 0
+
+
+def test_completed_job_journal_rejects_cycles_and_excessive_nesting():
+    cycle = []
+    cycle.append(cycle)
+    deep = []
+    cursor = deep
+    for _ in range(35):
+        next_level = []
+        cursor.append(next_level)
+        cursor = next_level
+    for metadata in (cycle, deep):
+        ledger = Ledger()
+        ledger.jobs = lambda: [{"state": "cancelled", "metadata": metadata}]
+        with pytest.raises(ValueError, match="journal"):
+            BackupPlanner(ledger).plan_backup(SITE["site_id"])
+        with pytest.raises(ValueError, match="journal"):
+            BackupPlanner(ledger).plan_restore(SITE["site_id"], BACKUP_ID)
+
+
+def test_completed_job_journal_accepts_nested_valid_json_metadata():
+    ledger = Ledger()
+    ledger.jobs = lambda: [{
+        "state": "succeeded",
+        "metadata": {"attempts": [1, 2], "verified": True,
+                     "notes": None, "duration": 0.25},
+    }]
+    planner = BackupPlanner(ledger)
+    assert planner.plan_backup(SITE["site_id"])["executable"] is False
+    assert planner.plan_restore(SITE["site_id"], BACKUP_ID)["executable"] is False
+    assert ledger.writes == 0
+
+
 def test_completed_operation_journal_is_accepted_without_enabling_writes():
     ledger = Ledger()
     ledger.jobs = lambda: [{"state": "succeeded"}, {"state": "cancelled"}]
