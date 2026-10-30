@@ -168,6 +168,46 @@ def verify_archive_stream(manifest_record, source):
         raise ValueError("Backup archive SHA-256 mismatch")
 
 
+def _validate_json_journal(value):
+    """Accept only finite, unambiguous JSON values in completed job records.
+
+    json.dumps alone silently converts tuple values and non-string map keys.
+    Neither is a trustworthy representation of a server-owned JSON ledger.
+    Bound nesting and item count before serialization to avoid pathological
+    metadata in a review-only planning request.
+    """
+    from math import isfinite
+
+    stack = [(value, 0)]
+    seen = set()
+    count = 0
+    while stack:
+        item, depth = stack.pop()
+        count += 1
+        if count > 10000 or depth > 32:
+            raise ValueError("Invalid completed operation journal")
+        kind = type(item)
+        if kind in (str, int, bool, type(None)):
+            continue
+        if kind is float:
+            if not isfinite(item):
+                raise ValueError("Invalid completed operation journal")
+            continue
+        if kind not in (dict, list) or id(item) in seen:
+            raise ValueError("Invalid completed operation journal")
+        seen.add(id(item))
+        if kind is dict:
+            if any(type(key) is not str for key in item):
+                raise ValueError("Invalid completed operation journal")
+            stack.extend((entry, depth + 1) for entry in item.values())
+        else:
+            stack.extend((entry, depth + 1) for entry in item)
+    try:
+        json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+    except (TypeError, ValueError, OverflowError, RecursionError):
+        raise ValueError("Invalid completed operation journal") from None
+
+
 class BackupPlanner:
     """Pure review-only plans using server-owned inventory, never client paths.
 
@@ -249,13 +289,9 @@ class BackupPlanner:
                 "succeeded", "cancelled"
             ):
                 raise ValueError("Unfinished or ambiguous site operation requires review")
-            # A completed entry with malformed metadata is not a trustworthy
-            # journal record. Match deletion review's strict JSON boundary;
-            # never silently accept NaN, objects or mixed-type map keys.
-            try:
-                json.dumps(job, sort_keys=True, separators=(",", ":"), allow_nan=False)
-            except (TypeError, ValueError):
-                raise ValueError("Invalid completed operation journal") from None
+            # Reject non-JSON values and silently coerced keys/tuples as well
+            # as non-finite numbers and cyclic or excessively deep metadata.
+            _validate_json_journal(job)
 
     def plan_backup(self, site_id):
         site = self._site(site_id)
