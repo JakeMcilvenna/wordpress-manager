@@ -180,8 +180,11 @@ requires a server-retrieved versioned backup manifest with the same site ID,
 domain, backend and resource inventory, a bounded archive size, a SHA-256
 checksum field and a UTC timestamp. The trusted adapter must also provide a
 **complete site inventory and operation journal** (`sites()` and `jobs()`).
-Planning refuses duplicate site IDs, domains, resource claims, a selected-site
-snapshot mismatch, missing inventory, and unfinished or ambiguous jobs. These
+Planning refuses duplicate site IDs, domains, resource claims (including
+parent/child filesystem paths owned by different sites), noncanonical path
+spellings, a selected-site snapshot mismatch, missing inventory, and unfinished
+or ambiguous jobs. Lexical checks cannot establish real filesystem ownership
+or symlink safety; a future executor must recheck under an exclusive lock. These
 read-only checks are not locks and must be repeated atomically by any future
 executor. Cross-site or ambiguous ownership, unknown manifest fields, invalid
 metadata and unhealthy/partially installed sites fail closed. The review plan includes an explicit target-site confirmation and is
