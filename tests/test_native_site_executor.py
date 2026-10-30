@@ -212,7 +212,12 @@ def test_tampered_created_ledger_cannot_free_or_adopt_resources(
     ("server { server_name other.test one.test; }", True),
     ("server_name other.test\n one.test;", True),
     ("server_name *.test;", True),
+    ("server_name one.*;", True),
+    ("server_name other.*;", False),
     ("server_name .one.test;", True),
+    ("server_name ~^other\\\\.test$;", True),  # unknown regex: fail closed
+    ("server_name ~*^one\\\\.test$;", True),
+    ("server_name $hostname;", True),
     ("server_name one.test;", True),
     ("server_name someone.test;", False),
     ("server_name other.test; # server_name one.test;", False),
@@ -279,6 +284,8 @@ def test_direct_native_create_refuses_unresolved_foreign_site_before_writes(
     ("available", "unmanaged.conf", "server { server_name OTHER.TEST One.Test; }"),
     ("enabled", "extensionless-vhost", "server { server_name OTHER.TEST ONE.TEST; }"),
     ("conf_d", "unmanaged.conf", "server { server_name *.test; }"),
+    ("conf_d", "trailing-wildcard.conf", "server { server_name one.*; }"),
+    ("enabled", "regex-vhost", "server { server_name ~^other\\\\.test$; }"),
 ])
 def test_native_nginx_preflight_checks_all_config_sources(
     monkeypatch, tmp_path, directory, filename, config
