@@ -243,6 +243,48 @@ def test_native_inventory_rejects_unrecognized_entries(monkeypatch, tmp_path, en
         native.DisposableUbuntuWebsiteBackend().list_sites()
 
 
+@pytest.mark.parametrize("entry_kind", ["directory", "file", "symlink"])
+def test_orphaned_native_site_root_blocks_new_plans_before_writes(
+    monkeypatch, tmp_path, entry_kind
+):
+    """A missing journal must not hide an existing WordPress tree."""
+    monkeypatch.setattr(native, "disposable_only", lambda: None)
+    records = tmp_path / "records"
+    root = tmp_path / "sites"
+    records.mkdir()
+    root.mkdir()
+    monkeypatch.setattr(native, "RECORDS", records)
+    monkeypatch.setattr(native, "ROOT", root)
+    orphan = root / "wm-ffffffffffff"
+    if entry_kind == "directory":
+        orphan.mkdir()
+    elif entry_kind == "file":
+        orphan.write_text("untracked WordPress data")
+    else:
+        orphan.symlink_to(tmp_path / "unknown")
+    backend = native.DisposableUbuntuWebsiteBackend()
+    with pytest.raises(ValueError, match="Unowned native site path"):
+        backend.list_sites()
+    with pytest.raises(ValueError, match="Unowned native site path"):
+        WebsiteService(backend).plan(
+            "New site", "admin@new.test", "new.test", "8.3"
+        )
+    monkeypatch.setattr(native, "_directory", lambda *args: pytest.fail(
+        "Orphaned resources must block creation before filesystem writes"
+    ))
+    with pytest.raises(ValueError, match="Unowned native site path"):
+        native.create(native.make_plan(spec("new.test")), native.CONFIRMATION)
+
+
+def test_missing_native_journal_cannot_hide_existing_site_root(monkeypatch, tmp_path):
+    monkeypatch.setattr(native, "disposable_only", lambda: None)
+    monkeypatch.setattr(native, "ROOT", tmp_path / "sites")
+    monkeypatch.setattr(native, "RECORDS", tmp_path / "missing-records")
+    native.ROOT.mkdir()
+    with pytest.raises(ValueError, match="roots require operator review"):
+        native.DisposableUbuntuWebsiteBackend().list_sites()
+
+
 def test_non_object_native_ledger_is_not_trusted(monkeypatch, tmp_path):
     monkeypatch.setattr(native, "disposable_only", lambda: None)
     monkeypatch.setattr(native, "RECORDS", tmp_path)
