@@ -449,6 +449,10 @@ class DisposableUbuntuWebsiteBackend:
         if RECORDS.is_symlink():
             raise ValueError("Unsafe site ledger directory symlink")
         if not RECORDS.is_dir():
+            # A vanished journal must not make an existing installation
+            # directory appear unowned and available for another site.
+            if os.path.lexists(RECORDS) or os.path.lexists(ROOT):
+                raise ValueError("Native site roots require operator review")
             return []
         sites = []
         # glob("*.json") silently ignores orphaned, renamed and hidden
