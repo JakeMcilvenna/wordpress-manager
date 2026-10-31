@@ -260,8 +260,63 @@ def main():
     finally:
         interrupted_path.unlink()
 
+    # Inject a real provisioning failure after the third site's Linux account
+    # and database have been created, but before WordPress download. The
+    # executor must retain its ownership journal rather than cleaning up
+    # partially owned resources or allowing an unrelated fourth install.
+    failed_plan = restarted.plan(
+        "Failure recovery", "admin@failure.test", "failure.test", "8.3"
+    )
+    original_run = native._run
+    def fail_wordpress_download(*args, **kwargs):
+        if (len(args) >= 7 and args[0] == "/usr/sbin/runuser"
+                and args[4:7] == ("/usr/local/bin/wp", "core", "download")):
+            raise RuntimeError("Injected disposable WordPress download failure")
+        return original_run(*args, **kwargs)
+
+    native._run = fail_wordpress_download
+    try:
+        try:
+            restarted.create(failed_plan, native.CONFIRMATION)
+        except RuntimeError as exc:
+            assert "Injected disposable" in str(exc)
+        else:
+            raise AssertionError("Injected third-site provisioning failure was ignored")
+    finally:
+        native._run = original_run
+
+    failed_record = native.read_record(failed_plan["site_id"])
+    assert failed_record["state"] == "needs-review"
+    assert failed_record["resources"] == failed_plan["resources"]
+    assert command("/usr/bin/id", "-u", "wms" + failed_plan["site_id"][3:13])
+    failed_database = "wm_" + failed_plan["site_id"][3:13]
+    assert command(
+        "/usr/bin/mariadb", "-N", "-B", "-e",
+        "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA "
+        "WHERE SCHEMA_NAME='" + failed_database + "';"
+    ) == failed_database
+    for action in (
+        lambda: WebsiteService(native.DisposableUbuntuWebsiteBackend()).plan(
+            "After failure", "admin@after-failure.test", "after-failure.test", "8.3"
+        ),
+        lambda: native.create(native.make_plan(native.WebsiteSpec.from_fields(
+            "Direct after failure", "admin@direct-after.test",
+            "direct-after.test", "8.3"
+        )), native.CONFIRMATION),
+    ):
+        try:
+            action()
+        except ValueError as exc:
+            assert "Incomplete native site ledger" in str(exc)
+        else:
+            raise AssertionError("Incomplete third-site ownership did not block creation")
+    assert native.read_record(plan["site_id"]) == first_record
+    assert native.read_record(second_plan["site_id"])["state"] == "created"
+    check_site(domain)
+    check_site(second_domain)
+
     print("PASS: disposable Ubuntu guest installed two isolated native WordPress "
-          "sites, preserved them across service restarts and rejected duplicate "
+          "sites, preserved them across restarts and failed provisioning, and rejected duplicate "
           "or forged plans", flush=True)
 
 
