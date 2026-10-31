@@ -486,6 +486,17 @@ class DisposableUbuntuWebsiteBackend:
             sites.append({"id": info["site_id"], "domain": info["domain"],
                           "name": info["title"], "state": "healthy",
                           "url": f"http://{info['domain']}:{PORT}/"})
+        # A lost, renamed or orphaned website directory may still own
+        # files and credentials even when its ledger record is absent.
+        # Never silently treat such resources as free capacity.
+        if os.path.lexists(ROOT):
+            if ROOT.is_symlink() or not ROOT.is_dir():
+                raise ValueError("Unsafe native site root")
+            owned_ids = {site["id"] for site in sites}
+            for path in ROOT.iterdir():
+                if (path.is_symlink() or not path.is_dir()
+                        or path.name not in owned_ids):
+                    raise ValueError("Unowned native site path requires operator review")
         return sites
 
     def plan(self, spec):
