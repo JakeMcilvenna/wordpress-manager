@@ -60,6 +60,20 @@ server side, enforce per-site UNIX/PHP-FPM isolation, generate and securely
 store MariaDB credentials, check domain conflicts and atomic Nginx
 configuration, and journal operations with rollback on failure.
 
+## Shared planning with multiple identities
+
+WebsiteService now checks the selected backend's actual managed-site inventory,
+rather than refusing every new plan whenever any site exists. Unique site IDs
+and canonical domains must not collide. Inconsistent inventories fail closed,
+including missing or non-boolean installation state, mismatched reported site
+counts, duplicate ownership IDs/domains, missing or noncanonical domains,
+unhealthy site records, and empty/ambiguous site identities. Both planning
+and confirmation recheck this inventory before invoking the platform adapter.
+
+This does not add dynamic Docker slots: the current local provisioner still
+owns one fixed site ID and prevents additional installations. The native
+disposable adapter can use distinct site IDs. Production remains disabled.
+
 ## Shared lifecycle data model
 
 - **Spec** — canonical `title`, `domain`, `email` and `php`.
@@ -126,14 +140,21 @@ ownership journal. The WordPress administrator password is returned only to
 the disposable integration test.
 
 The root-owned site ledger records the site ID, intended domain, owned
-resources and state. Partial failures are marked `needs-review`; the
-prototype **does not automatically delete or roll back** partially created
-resources. It refuses to adopt or overwrite existing paths/users/databases.
+resources and state. Partial failures are marked `needs-review`; an
+incomplete, ambiguous or symlinked ownership record blocks further native
+site planning until an operator investigates it. The prototype **does not
+automatically delete or roll back** partially created resources. It refuses
+to adopt or overwrite existing paths/users/databases. Nginx ownership preflight
+checks aliases and both leading and trailing wildcard names; regex names and
+`$hostname` are treated as ambiguous claims and block new sites rather than
+risking a silent domain collision. This conservative check is not a complete
+parser of arbitrary nested Nginx includes.
 
 The real integration test `tests/native_site_integration.py` runs after
 stack installation inside the existing disposable `tests/stack_integration.py`
 guest (the **full production CI gate**, not fast UI CI). It verifies the
-actual WordPress HTTP site, database, PHP-FPM pool, ownership and refusal of
+two actual WordPress HTTP sites, separate databases and PHP-FPM pools,
+ownership, persistence across Nginx/PHP-FPM restarts, and refusal of
 duplicate or forged plans. This should not be taken as proof of production
 support until that full integration job has actually passed.
 
@@ -149,8 +170,11 @@ invokes the disposable test helper from Flask or weakens its guest-only guard.
 
 1. The common model and validation cover duplicates, site identity, owned
    resources, job states and recovery across both environments.
-2. Docker integration creates at least two independent test sites, proves
-   they survive restarts and shows that one failure cannot change another.
+2. Keep the existing single-slot Docker preview for local dashboard tests;
+   do not build a second dynamic Docker multi-site hosting implementation.
+   Instead, disposable Ubuntu integration creates multiple independent native
+   sites, proves isolation and persistence, and checks that failure cannot
+   change another site's resources.
 3. Ubuntu's executor in a **disposable Ubuntu 24.04/systemd** test image
    creates Nginx config, Linux/PHP-FPM identity, MariaDB database/user,
    WordPress files and WP-CLI install through the same interface.

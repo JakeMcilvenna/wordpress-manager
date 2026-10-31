@@ -104,11 +104,67 @@ class WebsiteService:
     def list_sites(self):
         return self.backend.list_sites()
 
+    def _require_available(self, plan, *, creating=False):
+        """Reject collisions without confusing one installed site with a full backend.
+
+        A fixed-slot backend keeps rejecting additional sites because the new
+        plan claims the same site ID. A multi-site backend may plan a distinct
+        ID/domain while preserving every existing installation. Any unclear
+        inventory state fails closed rather than permitting an overwrite.
+        """
+        status = self.backend.inspect()
+        sites = self.backend.list_sites()
+        if not isinstance(status, dict) or not isinstance(sites, list):
+            raise ValueError("Website inventory is unavailable")
+        installed = status.get("installed")
+        if type(installed) is not bool or installed != bool(sites):
+            raise ValueError("Website inventory is inconsistent; operator review required")
+        # Some backends expose a site count. If present it must be exact,
+        # rather than a stale or truthy value masking missing ownership.
+        if "sites" in status and (
+            type(status["sites"]) is not int or status["sites"] != len(sites)
+        ):
+            raise ValueError("Website inventory count is inconsistent")
+        seen_ids = set()
+        seen_domains = set()
+        for site in sites:
+            if (not isinstance(site, dict) or
+                    not isinstance(site.get("id"), str) or
+                    not site["id"] or site["id"] != site["id"].strip()):
+                raise ValueError("Website inventory contains an invalid site identity")
+            # A missing domain or unhealthy record cannot prove that a new
+            # installation will not adopt an existing site's resources.
+            if site.get("state") != "healthy":
+                raise ValueError("Website inventory contains an incomplete site")
+            domain = site.get("domain")
+            if not isinstance(domain, str):
+                raise ValueError("Website inventory contains an invalid domain")
+            try:
+                canonical_domain = WebsiteSpec.from_fields(
+                    "Inventory review", "inventory@internal.test", domain, "8.3"
+                ).domain
+            except ValueError:
+                raise ValueError("Website inventory contains an invalid domain") from None
+            if domain != canonical_domain:
+                raise ValueError("Website inventory contains a noncanonical domain")
+            # Duplicate records are ambiguous ownership, even when neither
+            # collides with the new site. Never proceed on an unsafe inventory.
+            if site["id"] in seen_ids or canonical_domain in seen_domains:
+                raise ValueError("Website inventory contains duplicate site ownership")
+            seen_ids.add(site["id"])
+            seen_domains.add(canonical_domain)
+            # Site IDs represent owned resources; domains are independently
+            # unique even if a buggy adapter were to assign a different ID.
+            if site["id"] == plan.site_id or canonical_domain == plan.spec.domain:
+                if creating:
+                    raise ValueError("This website has already been installed.")
+                raise ValueError("This website slot or domain is already installed.")
+
     def plan(self, title, email, domain, php):
         spec = WebsiteSpec.from_fields(title, email, domain, php)
-        if self.backend.inspect().get("installed") is True:
-            raise ValueError("This website slot is already installed.")
-        return self.backend.plan(spec).as_session()
+        trusted = self.backend.plan(spec)
+        self._require_available(trusted)
+        return trusted.as_session()
 
     def create(self, stored_plan, confirmation):
         if not isinstance(stored_plan, dict):
@@ -124,8 +180,7 @@ class WebsiteService:
             raise ValueError("The website plan changed. Review it again.")
         if confirmation != trusted.confirmation:
             raise ValueError("Review the plan and type " + trusted.confirmation + " to approve.")
-        if self.backend.inspect().get("installed") is True:
-            raise ValueError("This website has already been installed.")
+        self._require_available(trusted, creating=True)
         return self.backend.create(trusted)
 
     def suspend(self, site_id):

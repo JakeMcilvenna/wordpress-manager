@@ -1,0 +1,185 @@
+"""Shared multi-site availability: never confuse 'any installed' with 'full'."""
+from hashlib import sha256
+
+import pytest
+
+from wordpress_manager.site_operations import WebsitePlan, WebsiteService
+
+
+class MemoryMultiSiteBackend:
+    """Deterministic contract fixture; no host or Docker operations."""
+    def __init__(self):
+        self.sites = []
+        self.create_calls = 0
+
+    def inspect(self):
+        return {"installed": bool(self.sites), "sites": len(self.sites)}
+
+    def list_sites(self):
+        return [dict(site) for site in self.sites]
+
+    def plan(self, spec):
+        site_id = "wm-" + sha256(spec.domain.encode("ascii")).hexdigest()[:12]
+        return WebsitePlan(
+            spec=spec, site_id=site_id, backend="native-contract-fixture",
+            preview_url="https://" + spec.domain + "/",
+            resources=("files:" + site_id, "db:" + site_id),
+            confirmation="CREATE TEST SITE",
+        )
+
+    def create(self, plan):
+        # Actual platform backends must atomically recheck inventory/ownership.
+        assert plan == self.plan(plan.spec)
+        self.create_calls += 1
+        site = {"id": plan.site_id, "domain": plan.spec.domain,
+                "name": plan.spec.title, "state": "healthy"}
+        self.sites.append(site)
+        return {"installed": True, **site}
+
+    def suspend(self, site_id):
+        raise NotImplementedError
+
+    def delete(self, site_id, confirmation):
+        raise NotImplementedError
+
+
+def create_site(service, domain):
+    plan = service.plan("Site " + domain, "admin@" + domain, domain, "8.3")
+    result = service.create(plan, "CREATE TEST SITE")
+    return plan, result
+
+
+def test_two_independent_sites_created_through_same_shared_service():
+    backend = MemoryMultiSiteBackend()
+    service = WebsiteService(backend)
+    first, first_result = create_site(service, "first.test")
+    second, second_result = create_site(service, "second.test")
+    assert first["site_id"] != second["site_id"]
+    assert set(first["resources"]).isdisjoint(second["resources"])
+    assert backend.create_calls == 2
+    assert [site["domain"] for site in service.list_sites()] == ["first.test", "second.test"]
+    assert service.inspect()["sites"] == 2
+
+    # Existing sites remain intact and still independently addressable.
+    with pytest.raises(ValueError, match="already installed"):
+        create_site(service, "FIRST.TEST")
+    with pytest.raises(ValueError, match="already been installed"):
+        service.create(first, "CREATE TEST SITE")
+    assert all(service.list_sites()[0][key] == first_result[key]
+               for key in ("id", "domain", "name", "state"))
+    assert all(service.list_sites()[1][key] == second_result[key]
+               for key in ("id", "domain", "name", "state"))
+    assert backend.create_calls == 2
+
+
+def test_duplicate_domain_rejected_even_if_backend_assigns_different_site_id():
+    backend = MemoryMultiSiteBackend()
+    service = WebsiteService(backend)
+    create_site(service, "first.test")
+    original_plan = backend.plan
+    def bad_plan(spec):
+        plan = original_plan(spec)
+        return WebsitePlan(plan.spec, "wm-deadbeefdead", plan.preview_url,
+                           plan.backend, ("other-files",), plan.confirmation)
+    backend.plan = bad_plan
+    with pytest.raises(ValueError, match="already installed"):
+        service.plan("Conflict", "admin@first.test", "FIRST.TEST.", "8.3")
+    assert backend.create_calls == 1
+
+
+def test_unreliable_inventory_fails_closed():
+    backend = MemoryMultiSiteBackend()
+    service = WebsiteService(backend)
+    backend.inspect = lambda: {"installed": True}
+    with pytest.raises(ValueError, match="inconsistent"):
+        service.plan("Unsafe", "admin@third.test", "third.test", "8.3")
+    backend.inspect = lambda: {"installed": False}
+    backend.sites.append({"id": "site-a", "domain": "first.test"})
+    with pytest.raises(ValueError, match="inconsistent"):
+        service.plan("Unsafe", "admin@third.test", "third.test", "8.3")
+
+
+def test_forged_manifest_cannot_create_or_change_another_site():
+    backend = MemoryMultiSiteBackend()
+    service = WebsiteService(backend)
+    first, _ = create_site(service, "first.test")
+    second = service.plan("Second", "admin@second.test", "second.test", "8.3")
+    with pytest.raises(ValueError, match="plan changed"):
+        service.create({**second, "resources": first["resources"]}, "CREATE TEST SITE")
+    with pytest.raises(ValueError, match="plan changed"):
+        service.create({**second, "site_id": first["site_id"]}, "CREATE TEST SITE")
+    assert backend.create_calls == 1
+    assert service.list_sites()[0]["domain"] == "first.test"
+
+
+@pytest.mark.parametrize("sites", [
+    # An unrelated duplicate must block every new installation, not just a
+    # plan that happens to collide with one of the duplicated records.
+    [{"id": "owned-a", "domain": "first.test"},
+     {"id": "owned-a", "domain": "second.test"}],
+    [{"id": "owned-a", "domain": "FIRST.TEST."},
+     {"id": "owned-b", "domain": "first.test"}],
+    [{"id": "", "domain": "first.test"}],
+    [{"id": "   ", "domain": "first.test"}],
+    [{"id": "owned-a", "domain": ""}],
+])
+def test_ambiguous_ownership_inventory_blocks_new_plans_and_applies(sites):
+    backend = MemoryMultiSiteBackend()
+    service = WebsiteService(backend)
+    pending = service.plan("Third", "admin@third.test", "third.test", "8.3")
+    backend.sites = sites
+    with pytest.raises(ValueError, match="inventory"):
+        service.plan("Fourth", "admin@fourth.test", "fourth.test", "8.3")
+    with pytest.raises(ValueError, match="inventory"):
+        service.create(pending, "CREATE TEST SITE")
+    assert backend.create_calls == 0
+
+
+def test_missing_or_non_boolean_installation_state_fails_closed():
+    backend = MemoryMultiSiteBackend()
+    service = WebsiteService(backend)
+    for state in (None, "false", 0, 1):
+        backend.inspect = lambda state=state: {"installed": state}
+        with pytest.raises(ValueError, match="inventory"):
+            service.plan("Unsafe", "admin@third.test", "third.test", "8.3")
+    backend.inspect = lambda: {}
+    with pytest.raises(ValueError, match="inventory"):
+        service.plan("Unsafe", "admin@third.test", "third.test", "8.3")
+
+
+@pytest.mark.parametrize("mutation", [
+    lambda site: site.pop("domain"),
+    lambda site: site.update(domain=""),
+    lambda site: site.update(domain="FIRST.TEST"),
+    lambda site: site.update(domain="first.test."),
+    lambda site: site.update(domain="Not recorded"),
+    lambda site: site.update(domain="first.test/../other.test"),
+    lambda site: site.pop("state"),
+    lambda site: site.update(state="needs-review"),
+    lambda site: site.update(id=" owned-a "),
+])
+def test_incomplete_site_inventory_blocks_planning_and_pending_approval(mutation):
+    backend = MemoryMultiSiteBackend()
+    service = WebsiteService(backend)
+    pending = service.plan("Pending", "admin@pending.test", "pending.test", "8.3")
+    backend.sites = [{"id": "owned-a", "domain": "first.test", "state": "healthy"}]
+    mutation(backend.sites[0])
+    with pytest.raises(ValueError, match="inventory"):
+        service.plan("New", "admin@new.test", "new.test", "8.3")
+    with pytest.raises(ValueError, match="inventory"):
+        service.create(pending, "CREATE TEST SITE")
+    assert backend.create_calls == 0
+
+
+@pytest.mark.parametrize("count", [None, True, False, "1", 0, 2, -1])
+def test_reported_site_count_must_match_full_inventory(count):
+    backend = MemoryMultiSiteBackend()
+    service = WebsiteService(backend)
+    pending = service.plan("Pending", "admin@pending.test", "pending.test", "8.3")
+    backend.sites = [{"id": "owned-a", "domain": "first.test", "state": "healthy"}]
+    backend.inspect = lambda: {"installed": True, "sites": count}
+    with pytest.raises(ValueError, match="inventory"):
+        service.plan("New", "admin@new.test", "new.test", "8.3")
+    with pytest.raises(ValueError, match="inventory"):
+        service.create(pending, "CREATE TEST SITE")
+    assert backend.create_calls == 0

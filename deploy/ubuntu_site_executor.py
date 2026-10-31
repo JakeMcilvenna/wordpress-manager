@@ -54,6 +54,7 @@ RECORDS = STATE / "records"
 LOCK = STATE / ".lock"
 NGINX_AVAILABLE = Path("/etc/nginx/sites-available")
 NGINX_ENABLED = Path("/etc/nginx/sites-enabled")
+NGINX_CONF_D = Path("/etc/nginx/conf.d")
 PHP_ROOT = Path("/etc/php")
 CONFIRMATION = "CREATE NATIVE TEST SITE"
 PORT = 18080
@@ -178,10 +179,70 @@ def _directory(path, mode):
     path.chmod(mode)
 
 
+def _nginx_claims_domain(config, domain):
+    """Conservatively detect existing Nginx names, including aliases.
+
+    A server_name directive may list several names or span lines. An exact
+    one-name regex would miss an alias and allow a conflicting site install.
+    Wildcards are treated as claims too; this is not a full Nginx parser.
+    """
+    uncommented = re.sub(r"(?m)#[^\n]*$", "", config)
+    for match in re.finditer(r"\bserver_name\s+([^;{}]+);", uncommented):
+        for name in match.group(1).split():
+            # Nginx server names are case-insensitive, including aliases.
+            name = name.lower()
+            if name == domain:
+                return True
+            # Regex names and Nginx's dynamic $hostname cannot be proven
+            # disjoint from a new domain by a static ownership preflight.
+            if name.startswith(("~", "$")):
+                return True
+            if name.startswith("*.") and domain.endswith(name[1:]):
+                return True
+            # Nginx also supports trailing wildcards (for example one.*).
+            if name.endswith(".*") and domain.startswith(name[:-1]):
+                return True
+            if name.startswith(".") and (domain == name[1:] or domain.endswith(name)):
+                return True
+    return False
+
+
+def _check_nginx_domain_available(domain):
+    """Reject unmanaged Nginx aliases, including enabled symlink targets.
+
+    The sites-available directory is not the full effective Nginx config.
+    Ubuntu includes sites-enabled/* (even extensionless symlinks), and conf.d
+    includes *.conf. Broken links or unreadable included files are ambiguous
+    ownership and must not be treated as available capacity.
+    """
+    for root, all_names in ((NGINX_AVAILABLE, False), (NGINX_ENABLED, True),
+                            (NGINX_CONF_D, False)):
+        if not root.is_dir():
+            continue
+        for path in root.iterdir():
+            if not all_names and path.suffix != ".conf":
+                continue
+            if path.is_symlink() and not path.is_file():
+                raise ValueError("Unresolvable Nginx configuration link")
+            if not path.is_file():
+                continue
+            try:
+                config = path.read_text()
+            except (OSError, UnicodeError):
+                raise ValueError("Unable to inspect Nginx domain ownership") from None
+            if _nginx_claims_domain(config, domain):
+                raise ValueError("Domain is already configured in Nginx")
+
+
 def _preflight(plan):
     disposable_only()
     if not isinstance(plan, WebsitePlan) or plan != make_plan(plan.spec):
         raise ValueError("Native website plan mismatch")
+    # Direct executor and authenticated socket callers must both reject a
+    # foreign interrupted, forged or unreadable ownership journal. Checking
+    # only the proposed site's paths would let new installs proceed while
+    # another site has unknown resources after a partial failure.
+    DisposableUbuntuWebsiteBackend().list_sites()
     paths = owned_paths(plan.site_id, plan.spec.php)
     for path in paths.values():
         if os.path.lexists(path):
@@ -205,13 +266,9 @@ def _preflight(plan):
     if _run("/usr/bin/mariadb", "--batch", "--skip-column-names",
             input_text=f"SELECT User FROM mysql.user WHERE User='wm_{plan.site_id[3:13]}';\n"):
         raise ValueError("Site database user already exists")
-    # Do not silently override existing Nginx domain ownership.
-    for root in (NGINX_AVAILABLE, Path("/etc/nginx/conf.d")):
-        if root.is_dir():
-            for path in root.iterdir():
-                if path.is_file() and not path.is_symlink() and path.suffix == ".conf":
-                    if re.search(r"\bserver_name\s+" + re.escape(plan.spec.domain) + r"\s*;", path.read_text()):
-                        raise ValueError("Domain is already configured in Nginx")
+    # Check effective enabled vhosts as well as staged configs: Ubuntu
+    # sites-enabled/* may point outside sites-available and need no .conf suffix.
+    _check_nginx_domain_available(plan.spec.domain)
     return paths
 
 
@@ -366,7 +423,7 @@ def read_record(site_id):
     if not record.is_file() or record.is_symlink():
         return None
     value = json.loads(record.read_text())
-    if value.get("site_id") != site_id:
+    if not isinstance(value, dict) or value.get("site_id") != site_id:
         raise ValueError("Site ledger identity mismatch")
     return value
 
@@ -389,17 +446,57 @@ class DisposableUbuntuWebsiteBackend:
 
     def list_sites(self):
         disposable_only()
+        if RECORDS.is_symlink():
+            raise ValueError("Unsafe site ledger directory symlink")
         if not RECORDS.is_dir():
+            # A vanished journal must not make an existing installation
+            # directory appear unowned and available for another site.
+            if os.path.lexists(RECORDS) or os.path.lexists(ROOT):
+                raise ValueError("Native site roots require operator review")
             return []
         sites = []
-        for record in sorted(RECORDS.glob("wm-*.json")):
-            if record.is_symlink():
-                raise ValueError("Unsafe site ledger symlink")
+        # glob("*.json") silently ignores orphaned, renamed and hidden
+        # records. Unknown entries can represent incomplete ownership.
+        for record in sorted(RECORDS.iterdir()):
+            if (record.is_symlink() or not record.is_file() or
+                    not ID.fullmatch(record.stem)):
+                raise ValueError("Unsafe or unrecognized site ledger record")
             info = read_record(record.stem)
-            if info and info.get("state") == "created":
-                sites.append({"id": info["site_id"], "domain": info["domain"],
-                              "name": info["title"], "state": "healthy",
-                              "url": f"http://{info['domain']}:{PORT}/"})
+            # An interrupted installation still owns resources. Never hide it
+            # from the shared availability check as though the slot were free.
+            if not isinstance(info, dict) or info.get("state") != "created":
+                raise ValueError("Incomplete native site ledger requires operator review")
+            # A 'created' flag alone is not proof of resource ownership.
+            # Verify the complete journal against the deterministic server-side
+            # plan before reporting it as healthy or allowing another install.
+            if set(info) != {"site_id", "domain", "php", "title", "resources", "state"}:
+                raise ValueError("Incomplete native site ownership record")
+            try:
+                spec = WebsiteSpec.from_fields(
+                    info["title"], "inventory@internal.test",
+                    info["domain"], info["php"],
+                )
+                expected = make_plan(spec)
+            except (TypeError, ValueError):
+                raise ValueError("Invalid native site ownership record") from None
+            if (info["site_id"] != expected.site_id or
+                    info["domain"] != spec.domain or
+                    info["resources"] != list(expected.resources)):
+                raise ValueError("Native site ownership record mismatch")
+            sites.append({"id": info["site_id"], "domain": info["domain"],
+                          "name": info["title"], "state": "healthy",
+                          "url": f"http://{info['domain']}:{PORT}/"})
+        # A lost, renamed or orphaned website directory may still own
+        # files and credentials even when its ledger record is absent.
+        # Never silently treat such resources as free capacity.
+        if os.path.lexists(ROOT):
+            if ROOT.is_symlink() or not ROOT.is_dir():
+                raise ValueError("Unsafe native site root")
+            owned_ids = {site["id"] for site in sites}
+            for path in ROOT.iterdir():
+                if (path.is_symlink() or not path.is_dir()
+                        or path.name not in owned_ids):
+                    raise ValueError("Unowned native site path requires operator review")
         return sites
 
     def plan(self, spec):
