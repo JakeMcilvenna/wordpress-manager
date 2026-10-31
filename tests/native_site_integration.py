@@ -226,6 +226,33 @@ def main():
     check_site(domain)
     check_site(second_domain)
 
+    # A missing ledger record must not make an existing WordPress directory
+    # invisible. Refuse both dashboard planning and direct root execution
+    # while preserving both healthy sites and their routing.
+    orphan = native.ROOT / "wm-ffffffffffff"
+    assert not orphan.exists()
+    orphan.mkdir()
+    try:
+        for action in (
+            lambda: restarted.plan(
+                "Unowned root", "admin@unowned.test", "unowned.test", "8.3"
+            ),
+            lambda: native.create(native.make_plan(native.WebsiteSpec.from_fields(
+                "Direct unowned root", "admin@direct-unowned.test",
+                "direct-unowned.test", "8.3"
+            )), native.CONFIRMATION),
+        ):
+            try:
+                action()
+            except ValueError as exc:
+                assert "Unowned native site path" in str(exc)
+            else:
+                raise AssertionError("Orphaned native WordPress tree was ignored")
+        check_site(domain)
+        check_site(second_domain)
+    finally:
+        orphan.rmdir()
+
     # Simulate a third site's interrupted ownership journal on the real guest.
     # Both service planning and a direct root executor call must fail closed,
     # without touching either of the two healthy WordPress installations.
