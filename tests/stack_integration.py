@@ -5,6 +5,7 @@ and private admin resources in the guest so their survival after uninstall can b
 """
 import argparse
 import hashlib
+import http.client
 import http.cookiejar
 import json
 import os
@@ -133,7 +134,6 @@ def main():
     assert credential.group(1) not in get('/development/native-sites')
     del credential, receipt
     for domain in ('native-one.test', 'native-two.test', 'native-three.test'):
-        import http.client
         connection = http.client.HTTPConnection('127.0.0.1', 18080, timeout=10)
         try:
             connection.request('GET', '/', headers={'Host': domain + ':18080'})
