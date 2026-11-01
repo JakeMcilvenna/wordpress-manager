@@ -60,6 +60,13 @@ def attach(app):
     controller = app.config.get("CONTROLLER") or Controller()
     app.extensions["controller"] = controller
 
+    # The guest-only UI is not registered on real Ubuntu hosts or local preview.
+    # The privileged socket independently enforces its own disposable guard.
+    from .native_site_ui import attach as attach_native_sites, disposable_guest
+    app.config["NATIVE_SITE_UI_ENABLED"] = disposable_guest()
+    if app.config["NATIVE_SITE_UI_ENABLED"]:
+        attach_native_sites(app, controller)
+
     def csrf():
         if "csrf" not in session:
             session["csrf"] = secrets.token_hex(32)
