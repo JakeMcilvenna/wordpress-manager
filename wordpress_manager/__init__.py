@@ -53,7 +53,9 @@ def create_app(config=None, collector=None):
                 and (request.endpoint in ("login", "logout", "stack_control")
                      or (app.config.get("DEV_PREVIEW") is True and
                          request.endpoint in ("dev_register_site", "dev_unregister_site",
-                                              "dev_create_site")))):
+                                              "dev_create_site"))
+                     or (app.config.get("NATIVE_SITE_UI_ENABLED") is True and
+                         request.endpoint == "native_site_control"))):
             abort(405)
 
     from .control import attach

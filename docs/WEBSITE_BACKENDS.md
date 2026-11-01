@@ -154,9 +154,32 @@ Requests use the existing authenticated Unix socket. Server-created site
 plans belong to one session and can be applied once with explicit approval.
 Job status does not expose credentials. Unfinished jobs need manual review.
 
-This protocol is not enabled through the production dashboard.
-The UbuntuWebsiteBackend stays unavailable until independently reviewed
-production safeguards, backups and recovery tests are complete.
+### Disposable Ubuntu dashboard-to-socket prototype
+
+The authenticated **disposable guest** dashboard now offers
+`/development/native-sites` from the Websites page. It uses the existing
+unprivileged `Controller` to send only `site-plan`, `site-apply`,
+`site-status` and `site-result` through the restricted Unix socket.
+The server owns plan IDs and job state; the browser cannot choose resource
+paths or shell commands. Site approval requires an explicit typed phrase.
+The one-time administrator password appears only in the direct POST result,
+never in a URL, session, GET page, job status or audit event.
+
+The Flask route is **not registered** unless the authenticated dashboard
+starts inside the exact marked Ubuntu 24.04 Docker integration guest. The
+marker is rechecked on each request, and the root socket independently
+revalidates its stricter disposable-only guard. The local Docker preview
+continues to use its existing fixed-site flow; no new Docker hosting
+implementation is introduced.
+
+The disposable system integration exercises the *installed* dashboard via
+HTTP and its real root socket, creating another isolated WordPress site
+alongside existing sites and checking their HTTP reachability. These checks
+must pass before claiming this milestone complete. This is not a production
+website-management feature.
+
+The production `UbuntuWebsiteBackend` remains unavailable until separately
+reviewed production safeguards, backups and recovery tests are complete.
 
 ## Acceptance gate for the next multi-site milestone
 

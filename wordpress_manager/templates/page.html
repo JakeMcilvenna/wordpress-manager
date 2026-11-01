@@ -10,6 +10,12 @@
 {% elif active == 'setup' %}
 <section class="panel"><div class="panel-heading"><div><h2>Server software</h2><p>Local detection only. Existing configuration is never changed.</p></div><span class="tag">Read-only</span></div>{{ service_table(snapshot, true) }}</section>
 <section class="plain-section"><h2>Install missing components</h2><div class="checklist"><p>{{ icon('check') }} Review the detected stack and preserve the existing PHP version.</p><p>{{ icon('check') }} Take a VPS snapshot and verify a restore path.</p><p>{{ icon('lock') }} Approve a specific package plan before the separate provisioning service runs it.</p></div>{% if control_enabled %}<a class="button" href="{{ url_for('stack_control') }}">Preview installation plan {{ icon('arrow') }}</a>{% else %}<p class="muted">Stack installation is disabled. The administrator can enable it during panel installation. Missing detection can mean an alternative installation path or insufficient permissions.</p>{% endif %}</section>
+{% elif active == 'websites' and native_site_ui_enabled|default(false) %}
+<section class="panel control-form">
+  <div class="panel-heading"><div><h2>Native Ubuntu test websites</h2><p>Create and inspect isolated WordPress sites through the authenticated disposable guest control service.</p></div><span class="tag">Disposable guest only</span></div>
+  <a class="button" href="{{ url_for('native_site_control') }}">Manage disposable websites</a>
+  <p class="muted">This interface is unavailable on a real VPS. Production website operations remain disabled.</p>
+</section>
 {% elif active == 'websites' and dev_preview|default(false) %}
 <section class="panel">
   <div class="panel-heading"><div><h2>Local WordPress sites</h2><p>Discover, register and create websites inside the isolated Docker stack.</p></div><span class="tag">Development only</span></div>

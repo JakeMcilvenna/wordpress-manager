@@ -5,6 +5,7 @@ and private admin resources in the guest so their survival after uninstall can b
 """
 import argparse
 import hashlib
+import http.client
 import http.cookiejar
 import json
 import os
@@ -96,6 +97,51 @@ def main():
     )
     assert socket_test.returncode == 0, socket_test.stderr[-3000:]
     assert 'PASS: authenticated guest socket' in socket_test.stdout
+    # Drive the *installed* unprivileged Flask dashboard through its real
+    # authenticated HTTP forms into the guest-only root socket. A third site
+    # proves the UI is not merely a mocked preview of the native backend.
+    page = get('/development/native-sites')
+    assert 'Disposable Ubuntu websites' in page
+    assert 'No website jobs in this session' in page
+    page = post('/development/native-sites', {
+        'csrf': token(page), 'action': 'plan', 'title': 'Third native website',
+        'email': 'admin@native-three.test', 'domain': 'native-three.test',
+        'php': '8.3',
+    })
+    assert 'Review ownership and confirm' in page
+    assert 'CREATE NATIVE TEST SITE' in page
+    native_plan = re.search('name="plan" value="([a-f0-9]{32})"', page).group(1)
+    page = post('/development/native-sites', {
+        'csrf': token(page), 'action': 'apply', 'plan': native_plan,
+        'confirmation': 'CREATE NATIVE TEST SITE',
+    })
+    for _ in range(390):
+        if 'Collect once' in page:
+            break
+        assert 'Native installation failed' not in page, 'Dashboard native site job failed'
+        time.sleep(2)
+        page = get('/development/native-sites')
+    else:
+        raise AssertionError('Dashboard native site job did not complete')
+    guest_job = re.search('name="job" value="([a-f0-9]{32})"', page).group(1)
+    receipt = post('/development/native-sites', {
+        'csrf': token(page), 'action': 'result', 'job': guest_job,
+    })
+    credential = re.search(r'<code>([0-9a-f]{40})</code>', receipt)
+    assert credential is not None and 'native-three.test' in receipt
+    # The one-time password must not enter a GET response, session cookie,
+    # durable status or audit logs. Do not print or persist it in this test.
+    assert credential.group(1) not in get('/development/native-sites')
+    del credential, receipt
+    for domain in ('native-one.test', 'native-two.test', 'native-three.test'):
+        connection = http.client.HTTPConnection('127.0.0.1', 18080, timeout=10)
+        try:
+            connection.request('GET', '/', headers={'Host': domain + ':18080'})
+            response = connection.getresponse()
+            assert response.status == 200 and b'WordPress' in response.read(512 * 1024)
+        finally:
+            connection.close()
+    print('PASS: authenticated dashboard created third independent disposable Ubuntu WordPress site', flush=True)
     assert hashlib.sha256(sentinel.read_bytes()).hexdigest() == original
     assert '127.0.0.1:8081' in run('ss', '-H', '-ltn', '( sport = :8081 )')
     assert '0.0.0.0:8081' not in run('ss', '-H', '-ltn', '( sport = :8081 )')
