@@ -75,7 +75,9 @@ def attach(app):
     @app.context_processor
     def context():
         return {"csrf_token": csrf, "auth_enabled": True,
-                "control_enabled": app.config["PROVISIONING_ENABLED"], "signed_in": bool(session.get("capability"))}
+                "control_enabled": app.config["PROVISIONING_ENABLED"],
+                "native_site_ui_enabled": app.config["NATIVE_SITE_UI_ENABLED"],
+                "signed_in": bool(session.get("capability"))}
 
     @app.before_request
     def access():
