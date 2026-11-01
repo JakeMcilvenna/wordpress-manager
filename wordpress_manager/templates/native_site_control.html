@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="page-heading">
+  <div><h1>Disposable Ubuntu websites</h1><p>Review and create isolated WordPress websites in the disposable Ubuntu 24.04 test guest.</p></div>
+  <a class="button" href="{{ url_for('native_site_control') }}">Refresh jobs</a>
+</div>
+<div class="notice warning" role="status"><p><strong>Test guest only.</strong> Domains must end in <code>.test</code>. This screen is unavailable on production hosts and cannot manage live sites.</p></div>
+{% if error %}<p class="notice warning" role="alert">{{ error }}</p>{% endif %}
+{% if result %}
+<section class="panel control-form">
+  <h2>One-time WordPress credentials</h2>
+  <p><strong>Website:</strong> {{ result.domain }}</p>
+  <p><strong>Preview:</strong> {{ result.url }}</p>
+  <p><strong>Administrator:</strong> {{ result.username }}</p>
+  <p><strong>Password:</strong> <code>{{ result.password }}</code></p>
+  <p class="muted">Copy this password now. It is not stored in the browser session or shown again.</p>
+</section>
+{% endif %}
+<section class="panel control-form">
+  <h2>Plan a native WordPress website</h2>
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="plan">
+    <label for="site-title">Website name</label>
+    <input id="site-title" name="title" maxlength="70" required>
+    <label for="site-email">Administrator email</label>
+    <input id="site-email" name="email" type="email" maxlength="120" required>
+    <label for="site-domain">Test domain</label>
+    <input id="site-domain" name="domain" placeholder="customer.test" required>
+    <label for="site-php">PHP version</label>
+    <select id="site-php" name="php"><option value="8.3">PHP 8.3</option><option value="8.4">PHP 8.4</option><option value="8.5">PHP 8.5</option></select>
+    <button class="button" type="submit">Review website plan</button>
+  </form>
+</section>
+{% if plan %}
+<section class="panel control-form">
+  <h2>Review ownership and confirm</h2>
+  <p><strong>Domain:</strong> {{ plan.domain }} · <strong>Site ID:</strong> {{ plan.site_id }}</p>
+  <p><strong>Backend:</strong> {{ plan.backend }} · <strong>PHP:</strong> {{ plan.php }}</p>
+  <p><strong>Proposed resources:</strong></p>
+  <ul>{% for resource in plan.resources %}<li><code>{{ resource }}</code></li>{% endfor %}</ul>
+  <p class="muted">Plan fingerprint: {{ plan.digest }}. Approval expires after ten minutes.</p>
+  <form method="post">
+    <input type="hidden" name="csrf" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="apply">
+    <input type="hidden" name="plan" value="{{ plan.id }}">
+    <label for="site-confirmation">Type {{ plan.confirmation }} to approve</label>
+    <input id="site-confirmation" name="confirmation" autocomplete="off" required>
+    <button class="button" type="submit">Create disposable website</button>
+  </form>
+</section>
+{% endif %}
+<section class="panel audit-panel">
+  <div class="panel-heading"><div><h2>Your website jobs</h2><p>Only jobs belonging to this authenticated session are shown. Refresh to check progress.</p></div></div>
+  <div class="table-scroll" tabindex="0" role="region" aria-label="Disposable website jobs">
+    <table><thead><tr><th scope="col">Site</th><th scope="col">Status</th><th scope="col">Details</th><th scope="col">Credentials</th></tr></thead>
+      <tbody>{% for job in jobs %}
+      <tr><td><code>{{ job.site_id }}</code></td><td>{{ job.state }}</td><td>{{ job.detail }}</td><td>
+        {% if job.state == 'succeeded' %}
+        <form method="post"><input type="hidden" name="csrf" value="{{ csrf_token() }}"><input type="hidden" name="action" value="result"><input type="hidden" name="job" value="{{ job.id }}"><button class="button" type="submit">Collect once</button></form>
+        {% else %}Not available{% endif %}
+      </td></tr>
+      {% else %}<tr><td colspan="4">No website jobs in this session.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+{% endblock %}
