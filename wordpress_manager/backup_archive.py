@@ -94,8 +94,11 @@ def inspect_backup_bundle(site_id, archive_bytes, archive_sha256, source):
             raise ValueError("Too many backup archive members")
         if member.type not in (tarfile.REGTYPE, tarfile.AREGTYPE, tarfile.DIRTYPE):
             raise ValueError("Backup archive links and special files are forbidden")
-        if member.mode & 0o6000:
-            raise ValueError("Privileged archive file modes are forbidden")
+        # Reject permissions that could let another site account modify a
+        # restored tree, plus sticky/setuid/setgid bits. This is only archive
+        # validation; a future restore must independently set safe ownership.
+        if member.mode & 0o7022:
+            raise ValueError("Unsafe backup archive file permissions")
         is_dir = member.isdir()
         name = member.name
         if is_dir and name.endswith("/"):
