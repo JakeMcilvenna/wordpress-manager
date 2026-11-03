@@ -139,3 +139,21 @@ def test_invalid_envelope_is_rejected_before_stream_reads(site_id, size, digest)
 
     with pytest.raises(ValueError):
         inspect_backup_bundle(site_id, size, digest, NeverRead())
+
+
+@pytest.mark.parametrize("unsafe_mode", [0o666, 0o664, 0o1777, 0o4755, 0o2755])
+def test_inspection_rejects_unsafe_permissions_on_required_files(unsafe_mode):
+    entries = _entries()
+    name, content, kind, _ = entries[0]
+    entries[0] = (name, content, kind, unsafe_mode)
+    data = _archive(entries)
+    with pytest.raises(ValueError, match="permissions"):
+        inspect_backup_bundle(SITE_ID, len(data), sha256(data).hexdigest(), BytesIO(data))
+
+
+@pytest.mark.parametrize("unsafe_mode", [0o777, 0o775, 0o1777])
+def test_inspection_rejects_unsafe_permissions_on_directories(unsafe_mode):
+    entries = _entries() + [(f"files/{SITE_ID}/uploads/", b"", tarfile.DIRTYPE, unsafe_mode)]
+    data = _archive(entries)
+    with pytest.raises(ValueError, match="permissions"):
+        inspect_backup_bundle(SITE_ID, len(data), sha256(data).hexdigest(), BytesIO(data))
