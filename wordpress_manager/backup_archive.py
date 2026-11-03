@@ -97,7 +97,7 @@ def inspect_backup_bundle(site_id, archive_bytes, archive_sha256, source):
         # Reject permissions that could let another site account modify a
         # restored tree, plus sticky/setuid/setgid bits. This is only archive
         # validation; a future restore must independently set safe ownership.
-        if member.mode & 0o7002:
+        if member.mode & 0o7022:
             raise ValueError("Unsafe backup archive file permissions")
         is_dir = member.isdir()
         name = member.name
