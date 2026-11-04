@@ -157,3 +157,32 @@ def test_inspection_rejects_unsafe_permissions_on_directories(unsafe_mode):
     data = _archive(entries)
     with pytest.raises(ValueError, match="permissions"):
         inspect_backup_bundle(SITE_ID, len(data), sha256(data).hexdigest(), BytesIO(data))
+
+
+@pytest.mark.parametrize("member_name", [
+    f"files/{SITE_ID}/wp-config.php",
+    f"database/{SITE_ID}.sql",
+])
+def test_inspection_rejects_nonzero_ustar_member_padding(member_name):
+    data = bytearray(_archive(_entries()))
+    with tarfile.open(fileobj=BytesIO(data), mode="r:", format=tarfile.USTAR_FORMAT) as tar:
+        member = tar.getmember(member_name)
+        padding_offset = member.offset_data + member.size
+        assert member.size % 512
+        assert data[padding_offset] == 0
+    data[padding_offset] = 0x58
+    changed = bytes(data)
+    with pytest.raises(ValueError, match="padding"):
+        inspect_backup_bundle(
+            SITE_ID, len(changed), sha256(changed).hexdigest(), BytesIO(changed)
+        )
+
+
+def test_inspection_accepts_full_block_member_without_padding():
+    entries = _entries()
+    name, _, kind, mode = entries[1]
+    entries[1] = (name, b"x" * 512, kind, mode)
+    data = _archive(entries)
+    assert inspect_backup_bundle(
+        SITE_ID, len(data), sha256(data).hexdigest(), BytesIO(data)
+    ) is None

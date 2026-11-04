@@ -127,7 +127,13 @@ def inspect_backup_bundle(site_id, archive_bytes, archive_sha256, source):
         padded = (member.size + _BLOCK - 1) // _BLOCK * _BLOCK
         if member.size < 0 or padded > remaining:
             raise ValueError("Backup archive member exceeds declared size")
-        skip_exact(padded)
+        # USTAR file payloads are padded with NUL bytes to the next block.
+        # Reject hidden nonzero bytes rather than accepting ambiguous bundles
+        # that a different archive reader could interpret differently.
+        skip_exact(member.size)
+        padding = padded - member.size
+        if padding and any(read_exact(padding)):
+            raise ValueError("Nonzero USTAR member padding")
 
     if not found_end:
         raise ValueError("Missing USTAR end marker")
