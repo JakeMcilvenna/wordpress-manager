@@ -216,10 +216,10 @@ def test_inspection_rejects_forged_ustar_device_numbers_on_regular_files(offset)
     # Python's tarfile writer normalizes device numbers on regular files.
     # Forge a syntactically valid raw USTAR header instead.
     data = bytearray(_archive(_entries()))
-    data[offset:offset + 8] = b"0000001\\0"
+    data[offset:offset + 8] = b"0000001\0"
     data[148:156] = b" " * 8
     checksum = sum(data[:512])
-    data[148:156] = f"{checksum:06o}\\0 ".encode("ascii")
+    data[148:156] = f"{checksum:06o}\0 ".encode("ascii")
     forged = bytes(data)
     with pytest.raises(ValueError, match="ownership or device metadata"):
         inspect_backup_bundle(SITE_ID, len(forged), sha256(forged).hexdigest(), BytesIO(forged))
