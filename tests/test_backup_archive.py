@@ -186,3 +186,40 @@ def test_inspection_accepts_full_block_member_without_padding():
     assert inspect_backup_bundle(
         SITE_ID, len(data), sha256(data).hexdigest(), BytesIO(data)
     ) is None
+
+
+@pytest.mark.parametrize("field,value", [
+    ("uid", 1001),
+    ("gid", 1002),
+    ("uname", "foreign-account"),
+    ("gname", "foreign-group"),
+    ("linkname", "foreign-target"),
+])
+def test_inspection_rejects_untrusted_ustar_ownership_and_device_metadata(field, value):
+    stream = BytesIO()
+    with tarfile.open(fileobj=stream, mode="w", format=tarfile.USTAR_FORMAT) as tar:
+        for name, content, kind, mode in _entries():
+            member = tarfile.TarInfo(name)
+            member.mode = mode
+            member.type = kind
+            member.size = len(content)
+            if name.endswith("wp-config.php"):
+                setattr(member, field, value)
+            tar.addfile(member, BytesIO(content))
+    data = stream.getvalue()
+    with pytest.raises(ValueError, match="ownership or device metadata"):
+        inspect_backup_bundle(SITE_ID, len(data), sha256(data).hexdigest(), BytesIO(data))
+
+
+@pytest.mark.parametrize("offset", [329, 337])
+def test_inspection_rejects_forged_ustar_device_numbers_on_regular_files(offset):
+    # Python's tarfile writer normalizes device numbers on regular files.
+    # Forge a syntactically valid raw USTAR header instead.
+    data = bytearray(_archive(_entries()))
+    data[offset:offset + 8] = b"0000001\0"
+    data[148:156] = b" " * 8
+    checksum = sum(data[:512])
+    data[148:156] = f"{checksum:06o}\0 ".encode("ascii")
+    forged = bytes(data)
+    with pytest.raises(ValueError, match="ownership or device metadata"):
+        inspect_backup_bundle(SITE_ID, len(forged), sha256(forged).hexdigest(), BytesIO(forged))
