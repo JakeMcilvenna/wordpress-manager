@@ -186,3 +186,28 @@ def test_inspection_accepts_full_block_member_without_padding():
     assert inspect_backup_bundle(
         SITE_ID, len(data), sha256(data).hexdigest(), BytesIO(data)
     ) is None
+
+
+@pytest.mark.parametrize("field,value", [
+    ("uid", 1001),
+    ("gid", 1002),
+    ("uname", "foreign-account"),
+    ("gname", "foreign-group"),
+    ("linkname", "foreign-target"),
+    ("devmajor", 8),
+    ("devminor", 1),
+])
+def test_inspection_rejects_untrusted_ustar_ownership_and_device_metadata(field, value):
+    stream = BytesIO()
+    with tarfile.open(fileobj=stream, mode="w", format=tarfile.USTAR_FORMAT) as tar:
+        for name, content, kind, mode in _entries():
+            member = tarfile.TarInfo(name)
+            member.mode = mode
+            member.type = kind
+            member.size = len(content)
+            if name.endswith("wp-config.php"):
+                setattr(member, field, value)
+            tar.addfile(member, BytesIO(content))
+    data = stream.getvalue()
+    with pytest.raises(ValueError, match="ownership or device metadata"):
+        inspect_backup_bundle(SITE_ID, len(data), sha256(data).hexdigest(), BytesIO(data))
