@@ -94,6 +94,12 @@ def inspect_backup_bundle(site_id, archive_bytes, archive_sha256, source):
             raise ValueError("Too many backup archive members")
         if member.type not in (tarfile.REGTYPE, tarfile.AREGTYPE, tarfile.DIRTYPE):
             raise ValueError("Backup archive links and special files are forbidden")
+        # Do not preserve source-host identities or link/device metadata in a
+        # proposed portable backup. A future restore must assign ownership from
+        # the trusted site ledger, never from attacker-controlled tar headers.
+        if (member.uid != 0 or member.gid != 0 or member.uname or member.gname
+                or member.linkname or member.devmajor or member.devminor):
+            raise ValueError("Unexpected backup archive ownership or device metadata")
         # Reject permissions that could let another site account modify a
         # restored tree, plus sticky/setuid/setgid bits. This is only archive
         # validation; a future restore must independently set safe ownership.
