@@ -85,6 +85,13 @@ def inspect_backup_bundle(site_id, archive_bytes, archive_sha256, source):
             break
         if block[257:263] != b"ustar\0":
             raise ValueError("Only uncompressed USTAR archives are supported")
+        # Tar readers can disagree about text hidden after a NUL terminator.
+        # Require canonical zero-filled USTAR text fields before parsing.
+        for start, length in ((0, 100), (157, 100), (265, 32),
+                              (297, 32), (345, 155)):
+            field = block[start:start + length]
+            if b"\\0" in field and any(field.split(b"\\0", 1)[1]):
+                raise ValueError("Noncanonical USTAR text field padding")
         try:
             member = tarfile.TarInfo.frombuf(block, encoding="utf-8", errors="strict")
         except (tarfile.TarError, ValueError, UnicodeError, OverflowError):

@@ -223,3 +223,26 @@ def test_inspection_rejects_forged_ustar_device_numbers_on_regular_files(offset)
     forged = bytes(data)
     with pytest.raises(ValueError, match="ownership or device metadata"):
         inspect_backup_bundle(SITE_ID, len(forged), sha256(forged).hexdigest(), BytesIO(forged))
+
+
+@pytest.mark.parametrize("offset,length", [
+    (0, 100),     # filename
+    (157, 100),   # link target (even for a regular file)
+    (265, 32),    # user name
+    (297, 32),    # group name
+    (345, 155),   # path prefix
+])
+def test_inspection_rejects_hidden_text_after_ustar_nul(offset, length):
+    # Forge a valid-checksum header with bytes concealed after a NUL.
+    # Python's tar parser may discard the suffix, but another reader may not.
+    data = bytearray(_archive(_entries()))
+    field = bytes(data[offset:offset + length])
+    nul = field.find(b"\\0")
+    assert nul >= 0 and nul + 1 < length
+    data[offset + nul + 1] = ord("X")
+    data[148:156] = b" " * 8
+    checksum = sum(data[:512])
+    data[148:156] = f"{checksum:06o}\\0 ".encode("ascii")
+    forged = bytes(data)
+    with pytest.raises(ValueError, match="Noncanonical USTAR text field"):
+        inspect_backup_bundle(SITE_ID, len(forged), sha256(forged).hexdigest(), BytesIO(forged))
