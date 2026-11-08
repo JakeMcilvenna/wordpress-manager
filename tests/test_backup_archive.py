@@ -237,12 +237,12 @@ def test_inspection_rejects_hidden_text_after_ustar_nul(offset, length):
     # Python's tar parser may discard the suffix, but another reader may not.
     data = bytearray(_archive(_entries()))
     field = bytes(data[offset:offset + length])
-    nul = field.find(b"\\0")
+    nul = field.find(b"\0")
     assert nul >= 0 and nul + 1 < length
     data[offset + nul + 1] = ord("X")
     data[148:156] = b" " * 8
     checksum = sum(data[:512])
-    data[148:156] = f"{checksum:06o}\\0 ".encode("ascii")
+    data[148:156] = f"{checksum:06o}\0 ".encode("ascii")
     forged = bytes(data)
     with pytest.raises(ValueError, match="Noncanonical USTAR text field"):
         inspect_backup_bundle(SITE_ID, len(forged), sha256(forged).hexdigest(), BytesIO(forged))
