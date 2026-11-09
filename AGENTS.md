@@ -6,10 +6,10 @@ repository, including work performed by Codex or another coding assistant.
 ## Two execution environments, one application
 
 WordPress Manager is a **native Ubuntu 24.04 LTS hosting panel**, deployed to
-the real Hetzner VPS without requiring Docker. **Docker Desktop** is the local
-development/integration harness only. Both environments must support the same
-user-visible website lifecycle semantics through the shared interface in
-`wordpress_manager/site_operations.py`.
+the real Hetzner VPS without requiring Docker. **Docker Desktop** is primarily a fast local UI preview and unit-test harness.
+Disposable Ubuntu 24.04 is the authoritative environment for native website
+operations and end-to-end integration tests. Both use the shared application
+contract in `wordpress_manager/site_operations.py`.
 
 - Keep request validation, domain normalization, site identities, plans,
   confirmation, ownership manifests, status values, job and error states
@@ -17,8 +17,9 @@ user-visible website lifecycle semantics through the shared interface in
   inside Docker-specific files.
 - Platform implementations adapt the same `WebsiteBackend` interface:
   `dev/docker_sites.py` for local containers and
-  `wordpress_manager/ubuntu_sites.py` for production. A new feature is NOT
-  considered production-ready until *both* paths are implemented and tested.
+  `wordpress_manager/ubuntu_sites.py` for production. A new native hosting feature is NOT considered production-ready until the
+  Ubuntu path is independently tested on disposable Ubuntu 24.04. Docker
+  parity is not a release requirement.
 - The Ubuntu backend MUST NOT depend on Docker, container networking, named
   Docker volumes or test-only passwords. It must use the existing restricted
   provisioner security boundary, with a separately reviewed allowlist for
@@ -35,15 +36,17 @@ user-visible website lifecycle semantics through the shared interface in
   rollbacks. Never infer deletion targets directly from user-provided domains
   or paths. Never touch unmanaged websites.
 - Changes must preserve both existing Docker test sites on ports 8091 and
-  8092 and existing WordPress data volumes unless an isolated disposable test
-  explicitly creates and owns the data.
+  8092 and existing WordPress data volumes. Retire obsolete Docker hosting
+  code only in separate, reviewed changes after replacement test coverage is
+  demonstrated; never remove or mutate user data as part of that cleanup.
 
 ## Completion requirements
 
-1. Add shared-service contract tests and local Docker adapter tests for each
-   new website operation; use the real local stack for end-to-end functionality.
-2. Add disposable Ubuntu 24.04/systemd tests executing the **actual restricted
-   Ubuntu site executor** before claiming production support.
+1. Add fast shared-service contract tests and local dashboard/UI tests for
+   each new website operation. Preserve existing Docker integration coverage
+   during migration, but do not expand Docker as a second hosting platform.
+2. Use disposable Ubuntu 24.04/systemd tests executing the **actual restricted
+   Ubuntu site executor** as the authoritative end-to-end hosting tests.
 3. Keep feature PRs in `main` with fast checks; only release reviewed features
    into the protected `production` branch, with full security/deployment tests.
 4. Do not enable an incomplete or unverified Ubuntu website action in the
