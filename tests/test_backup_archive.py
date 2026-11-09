@@ -246,3 +246,21 @@ def test_inspection_rejects_hidden_text_after_ustar_nul(offset, length):
     forged = bytes(data)
     with pytest.raises(ValueError, match="Noncanonical USTAR text field"):
         inspect_backup_bundle(SITE_ID, len(forged), sha256(forged).hexdigest(), BytesIO(forged))
+
+
+@pytest.mark.parametrize("offset,mutated,expected", [
+    (263, ord("X"), "version"),
+    (264, ord("1"), "version"),
+    (500, ord("X"), "reserved"),
+    (511, ord("X"), "reserved"),
+])
+def test_inspection_rejects_noncanonical_ustar_version_and_reserved_bytes(offset, mutated, expected):
+    # Keep the header checksum valid so the parser must enforce the format.
+    data = bytearray(_archive(_entries()))
+    data[offset] = mutated
+    data[148:156] = b" " * 8
+    checksum = sum(data[:512])
+    data[148:156] = f"{checksum:06o}\0 ".encode("ascii")
+    forged = bytes(data)
+    with pytest.raises(ValueError, match=expected):
+        inspect_backup_bundle(SITE_ID, len(forged), sha256(forged).hexdigest(), BytesIO(forged))
