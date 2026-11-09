@@ -1,26 +1,28 @@
 # WordPress Manager
 
-A private WordPress server-management dashboard for **Ubuntu 24.04**. The goal is to manage multiple isolated websites from one local-first interface, with explicit approval for server changes and safe backup, restore and removal workflows.
+A project I'm working on to manage WordPress sites on Ubuntu 24.04 from one dashboard.
 
-**Status:** Work in progress. Native Ubuntu website provisioning, backup/restore and site deletion are not yet ready for production. Development and integration testing use disposable environments only; do not run unfinished site-management features on live servers.
+It's still early days. I'm building out the site setup, backup/restore and removal parts, and there's a fair bit left to test. **This isn't ready to use on a live server.** I'm doing the server-side testing on throwaway Ubuntu machines for now.
 
-## Local preview
+## Running it locally
 
-For the lightweight dashboard preview with Docker Desktop:
+There's a Docker preview if you just want to see the dashboard:
 
 ```bash
 docker compose -f compose.preview.yml up --build
 ```
 
-Open **http://127.0.0.1:8090**. Stop with Ctrl+C and run:
+Then go to http://127.0.0.1:8090.
+
+To stop and clean up:
 
 ```bash
 docker compose -f compose.preview.yml down
 ```
 
-This is an unprivileged UI preview, **not** a complete WordPress server.
+This is just a preview of the app, not a full WordPress setup.
 
-## Development and tests
+## Working on the app
 
 ```bash
 python -m venv .venv
@@ -29,23 +31,12 @@ python -m venv .venv
 .venv/bin/python -m pytest -q
 ```
 
-On Windows PowerShell, use `.\.venv\Scripts\python` instead of `.venv/bin/python`.
+On Windows, use `.\.venv\Scripts\python` instead of `.venv/bin/python`.
 
-Ubuntu systemd and WordPress integration tests must run **only in disposable Ubuntu 24.04 environments**, never on live infrastructure.
+## Notes
 
-## Architecture and safety
+The dashboard uses Flask. The idea is to keep sites separate from the manager itself, so removing or changing the dashboard doesn't take the sites with it.
 
-- Flask dashboard, bound to localhost; deployed access is via SSH tunnel.
-- Shared validation, planning and approval logic in `wordpress_manager/site_operations.py`.
-- Separate adapters for local Docker preview and native Ubuntu operations.
-- Restricted server-side control; no arbitrary shell execution through the dashboard.
-- Website data must remain independent of the dashboard installation and removal.
+I'm keeping the server operations restricted while I work through the safety checks. Anything involving real Ubuntu services should only be tested on disposable machines at this stage.
 
-## Documentation
-
-- [Website backends and development architecture](docs/WEBSITE_BACKENDS.md)
-- [Contributor and safety rules](AGENTS.md)
-- [Provisioning and security design](docs/PROVISIONING.md)
-- [Production deployment documentation](docs/PRODUCTION_DEPLOYMENT.md)
-
-Production deployment is **not enabled** as part of ongoing prototype development.
+More detail is in [the backend notes](docs/WEBSITE_BACKENDS.md), [provisioning docs](docs/PROVISIONING.md) and [AGENTS.md](AGENTS.md).
