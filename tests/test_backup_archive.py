@@ -260,7 +260,7 @@ def test_inspection_rejects_noncanonical_ustar_version_and_reserved_bytes(offset
     data[offset] = mutated
     data[148:156] = b" " * 8
     checksum = sum(data[:512])
-    data[148:156] = f"{checksum:06o}\\0 ".encode("ascii")
+    data[148:156] = f"{checksum:06o}\0 ".encode("ascii")
     forged = bytes(data)
     with pytest.raises(ValueError, match=expected):
         inspect_backup_bundle(SITE_ID, len(forged), sha256(forged).hexdigest(), BytesIO(forged))
