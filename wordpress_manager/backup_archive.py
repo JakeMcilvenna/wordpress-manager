@@ -83,7 +83,7 @@ def inspect_backup_bundle(site_id, archive_bytes, archive_sha256, source):
                     raise ValueError("Unexpected data after USTAR end marker")
             found_end = True
             break
-        if block[257:265] != b"ustar\0000":
+        if block[257:265] != b"ustar\x00" + b"00":
             raise ValueError("Only canonical POSIX USTAR version 00 archives are supported")
         # USTAR leaves the final twelve header bytes unused. Reject covert
         # metadata there, even when the tar checksum has been recomputed.
