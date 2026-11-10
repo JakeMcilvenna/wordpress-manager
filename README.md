@@ -2,7 +2,7 @@
 
 A project I'm working on to manage WordPress sites on Ubuntu 24.04 from one dashboard.
 
-It's still early days. I'm building out the site setup, backup/restore and removal parts, and there's a fair bit left to test. **This isn't ready to use on a live server.** I'm doing the server-side testing on throwaway Ubuntu machines for now.
+It's still early days. I'm building out the site setup, backup/restore and removal parts, and there's a fair bit left to test. This isn't ready to use on a live server. I'm doing the server-side testing on throwaway Ubuntu machines for now.
 
 ## Running it locally
 
