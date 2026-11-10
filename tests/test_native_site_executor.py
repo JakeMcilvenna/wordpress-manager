@@ -121,3 +121,25 @@ def test_ownership_journal_has_no_automatic_destructive_cleanup():
             "wordpress_manager/ubuntu_sites.py").read_text()
     assert "WebsiteOperationUnavailable" in prod
     assert "def _disabled" in prod
+
+
+def test_multiple_native_plans_have_disjoint_ownership_and_vhost_routing():
+    """Fast, read-only regression before expensive disposable Ubuntu tests."""
+    first = native.make_plan(spec("first.test"))
+    second = native.make_plan(spec("second.test"))
+    assert first.site_id != second.site_id
+    assert set(first.resources).isdisjoint(second.resources)
+    for own, other in ((first, second), (second, first)):
+        nginx = native.nginx_config(own)
+        fpm = native.fpm_config(own)
+        assert "server_name " + own.spec.domain + ";" in nginx
+        assert "server_name " + other.spec.domain + ";" not in nginx
+        assert "root " + str(native.ROOT / own.site_id) + ";" in nginx
+        assert str(native.ROOT / other.site_id) not in nginx
+        assert "fastcgi_pass unix:/run/php/" + own.site_id + ".sock;" in nginx
+        assert other.site_id not in nginx
+        assert "[" + own.site_id + "]" in fpm
+        assert "listen = /run/php/" + own.site_id + ".sock" in fpm
+        assert other.site_id not in fpm
+        assert "user = wms" + own.site_id[3:13] in fpm
+        assert "group = wms" + own.site_id[3:13] in fpm
