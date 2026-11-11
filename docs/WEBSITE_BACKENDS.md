@@ -1,9 +1,9 @@
-# Website management architecture: one app, two backends
+# Website management architecture: one app, Ubuntu-first testing
 
 **Non-negotiable target:** WordPress Manager runs **natively on the Hetzner
-Ubuntu 24.04 VPS without Docker**. Docker Desktop is an isolated local
-development/test harness. New functionality must implement one shared
-application contract and have separately verified environment adapters.
+Ubuntu 24.04 VPS without Docker**. Docker Desktop remains a quick local UI preview and legacy development
+harness. Disposable Ubuntu 24.04 is the primary end-to-end test environment
+for hosting operations. All workflows share the same application contract.
 
 ## Architectural boundary
 
@@ -145,12 +145,31 @@ site ownership and duplicate-domain checks, backup and rollback, site
 credentials handling, TLS and full VPS audit. Never add a shortcut that
 invokes the disposable test helper from Flask or weakens its guest-only guard.
 
+## Testing direction
+
+- **Local:** keep the lightweight Docker dashboard preview, fast unit tests,
+  form validation and mock data. Do not require a full local WordPress stack
+  for routine UI work.
+- **Disposable Ubuntu 24.04:** make native Nginx, PHP-FPM, MariaDB, WP-CLI,
+  systemd, backups, restore, ownership, failure recovery and deletion tests
+  the primary integration path. Automate setup and teardown so this remains
+  reproducible.
+- **Existing Docker site backend:** retain its current behavior and tests
+  while native Ubuntu tests reach equivalent coverage. Do not build new
+  hosting features twice just to maintain Docker parity. Remove redundant
+  Docker hosting code only through separate, reviewed PRs with evidence of
+  replacement coverage; never delete existing volumes or sites.
+- **Production:** keep `UbuntuWebsiteBackend` disabled and require separate
+  security review and explicit authorization before enabling live actions.
+  Never test new operations on Hetzner or any real server.
+
 ## Acceptance gate for the next multi-site milestone
 
 1. The common model and validation cover duplicates, site identity, owned
    resources, job states and recovery across both environments.
-2. Docker integration creates at least two independent test sites, proves
-   they survive restarts and shows that one failure cannot change another.
+2. Disposable Ubuntu integration creates at least two independent test sites,
+   proves they survive restarts and shows that one failure cannot change
+   another. Keep existing Docker tests until native coverage replaces them.
 3. Ubuntu's executor in a **disposable Ubuntu 24.04/systemd** test image
    creates Nginx config, Linux/PHP-FPM identity, MariaDB database/user,
    WordPress files and WP-CLI install through the same interface.
