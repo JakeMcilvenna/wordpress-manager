@@ -203,7 +203,7 @@ def _validate_json_journal(value):
         else:
             stack.extend((entry, depth + 1) for entry in item)
     try:
-        json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
     except (TypeError, ValueError, OverflowError, RecursionError):
         raise ValueError("Invalid completed operation journal") from None
 
@@ -223,8 +223,8 @@ class BackupPlanner:
         site = OwnedSite.from_record(self.inventory.site(site_id))
         if site.site_id != site_id:
             raise ValueError("Owned site identity mismatch")
-        self._verify_ownership_snapshot(site)
-        return site
+        snapshot_digest = self._verify_ownership_snapshot(site)
+        return site, snapshot_digest
 
     def _verify_ownership_snapshot(self, selected):
         """Fail closed if any site shares a resource/domain or a job is unfinished.
@@ -239,6 +239,7 @@ class BackupPlanner:
         site_ids, domains, resources = set(), set(), set()
         path_claims = {}
         selected_found = False
+        site_snapshot = []
         for record in records:
             if not isinstance(record, dict):
                 raise ValueError("Complete site inventory required")
@@ -254,6 +255,10 @@ class BackupPlanner:
                 raise ValueError("Ambiguous site or domain ownership")
             site_ids.add(site_id)
             domains.add(domain)
+            site_snapshot.append({
+                "site_id": site_id, "domain": domain, "backend": record["backend"],
+                "resources": list(owned), "state": record["state"],
+            })
             for resource in owned:
                 if resource in resources:
                     raise ValueError("Resource is claimed by multiple sites")
@@ -284,6 +289,7 @@ class BackupPlanner:
         jobs = self.inventory.jobs()
         if not isinstance(jobs, (list, tuple)) or len(jobs) > 10000:
             raise ValueError("Complete operation journal required")
+        job_snapshot = []
         for job in jobs:
             if not isinstance(job, dict) or job.get("state") not in (
                 "succeeded", "cancelled"
@@ -291,20 +297,30 @@ class BackupPlanner:
                 raise ValueError("Unfinished or ambiguous site operation requires review")
             # Reject non-JSON values and silently coerced keys/tuples as well
             # as non-finite numbers and cyclic or excessively deep metadata.
-            _validate_json_journal(job)
+            job_snapshot.append(_validate_json_journal(job))
+
+        # A review fingerprint must cover *all* ownership and completed jobs,
+        # not just the selected site. It is not a lock or authorization token.
+        snapshot = {
+            "sites": sorted(site_snapshot, key=lambda item: item["site_id"]),
+            "jobs": sorted(job_snapshot),
+        }
+        return sha256(json.dumps(
+            snapshot, sort_keys=True, separators=(",", ":")
+        ).encode("utf-8")).hexdigest()
 
     def plan_backup(self, site_id):
-        site = self._site(site_id)
+        site, snapshot_digest = self._site(site_id)
         return {
             "operation": "backup", "site_id": site.site_id,
             "domain": site.domain, "backend": site.backend,
             "resources": list(site.resources),
             "confirmation": "BACKUP " + site.site_id,
-            "executable": False,
+            "snapshot_digest": snapshot_digest, "executable": False,
         }
 
     def plan_restore(self, site_id, backup_id):
-        site = self._site(site_id)
+        site, snapshot_digest = self._site(site_id)
         backup_id = _identity(backup_id, _BACKUP_ID, "backup ID")
         manifest = BackupManifest.from_record(self.inventory.backup(backup_id))
         if manifest.backup_id != backup_id or (
@@ -327,6 +343,7 @@ class BackupPlanner:
             "domain": site.domain, "backend": site.backend,
             "resources": list(site.resources), "backup_id": manifest.backup_id,
             "manifest_digest": metadata_digest,
+            "snapshot_digest": snapshot_digest,
             "confirmation": "RESTORE " + site.site_id,
             "executable": False,
         }

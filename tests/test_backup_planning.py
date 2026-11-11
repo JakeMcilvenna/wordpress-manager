@@ -56,8 +56,9 @@ def test_backup_plan_uses_only_owned_inventory_and_never_executes():
         "operation": "backup", "site_id": SITE["site_id"],
         "domain": SITE["domain"], "backend": SITE["backend"],
         "resources": SITE["resources"], "confirmation": "BACKUP " + SITE["site_id"],
-        "executable": False,
+        "snapshot_digest": plan["snapshot_digest"], "executable": False,
     }
+    assert len(plan["snapshot_digest"]) == 64
     assert planner.plan_backup(OTHER["site_id"])["resources"] == OTHER["resources"]
     assert ledger.writes == 0
     with pytest.raises(WebsiteOperationUnavailable, match="disabled"):
@@ -75,6 +76,7 @@ def test_restore_plan_requires_exact_site_and_backup_ownership():
     assert plan["confirmation"] == "RESTORE " + SITE["site_id"]
     assert plan["executable"] is False
     assert len(plan["manifest_digest"]) == 64
+    assert len(plan["snapshot_digest"]) == 64
     with pytest.raises(ValueError, match="ownership"):
         planner.plan_restore(OTHER["site_id"], BACKUP_ID)
     with pytest.raises(WebsiteOperationUnavailable, match="disabled"):
@@ -476,4 +478,44 @@ def test_namespaced_opaque_resource_claims_remain_valid_and_read_only():
     planner = BackupPlanner(ledger)
     assert planner.plan_backup(SITE["site_id"])["resources"][-2:] == extra
     assert planner.plan_restore(SITE["site_id"], BACKUP_ID)["executable"] is False
+    assert ledger.writes == 0
+
+
+def test_backup_restore_review_fingerprint_covers_foreign_site_and_finished_jobs():
+    """A plan must not appear unchanged after unrelated ownership drift."""
+    ledger = Ledger()
+    planner = BackupPlanner(ledger)
+    original_backup = planner.plan_backup(SITE["site_id"])
+    original_restore = planner.plan_restore(SITE["site_id"], BACKUP_ID)
+    baseline = original_backup["snapshot_digest"]
+    assert original_restore["snapshot_digest"] == baseline
+
+    ledger.site_records[OTHER["site_id"]]["resources"].append("/srv/foreign-extra")
+    assert planner.plan_backup(SITE["site_id"])["snapshot_digest"] != baseline
+    assert planner.plan_restore(SITE["site_id"], BACKUP_ID)["snapshot_digest"] != baseline
+
+    ledger.site_records[OTHER["site_id"]]["resources"].pop()
+    ledger.jobs = lambda: [{"state": "succeeded", "job_id": "finished-foreign"}]
+    assert planner.plan_backup(SITE["site_id"])["snapshot_digest"] != baseline
+    assert planner.plan_restore(SITE["site_id"], BACKUP_ID)["snapshot_digest"] != baseline
+    assert ledger.writes == 0
+
+
+def test_backup_restore_review_fingerprint_is_stable_across_inventory_order():
+    ledger = Ledger()
+    jobs = [
+        {"state": "succeeded", "job_id": "job-a", "metadata": {"count": 2}},
+        {"state": "cancelled", "job_id": "job-b"},
+    ]
+    ledger.jobs = lambda: deepcopy(jobs)
+    planner = BackupPlanner(ledger)
+    backup = planner.plan_backup(SITE["site_id"])
+    restore = planner.plan_restore(SITE["site_id"], BACKUP_ID)
+
+    ledger.sites = lambda: list(reversed([
+        deepcopy(record) for record in ledger.site_records.values()
+    ]))
+    ledger.jobs = lambda: list(reversed(deepcopy(jobs)))
+    assert planner.plan_backup(SITE["site_id"])["snapshot_digest"] == backup["snapshot_digest"]
+    assert planner.plan_restore(SITE["site_id"], BACKUP_ID)["snapshot_digest"] == restore["snapshot_digest"]
     assert ledger.writes == 0
