@@ -104,8 +104,61 @@ def main():
     assert service.list_sites() == listed
     assert native.read_record(plan["site_id"])["state"] == "created"
     check_site(domain)
-    print("PASS: disposable Ubuntu guest installed isolated native WordPress, "
-          "preserved ownership and rejected forged/duplicate plans", flush=True)
+
+    # Exercise two *real* native sites, not just independent planning metadata.
+    # The first site's files, database and ownership ledger must remain intact.
+    second_domain = "native-two.test"
+    second_plan = service.plan("Second native WordPress", "admin@native-two.test",
+                               second_domain, "8.3")
+    assert second_plan["site_id"] != plan["site_id"]
+    assert set(second_plan["resources"]).isdisjoint(plan["resources"])
+    second_result = service.create(second_plan, native.CONFIRMATION)
+    assert second_result["installed"] is True
+    assert second_result["domain"] == second_domain
+    assert second_result["password"] and len(second_result["password"]) >= 30
+    # Neither generated password is logged or persisted by the test.
+    assert native.read_record(second_plan["site_id"])["state"] == "created"
+    assert native.read_record(plan["site_id"]) == record
+    assert (native.ROOT / plan["site_id"] / "index.php").is_file()
+    assert (native.ROOT / second_plan["site_id"] / "index.php").is_file()
+
+    second_account = "wms" + second_plan["site_id"][3:13]
+    second_db = "wm_" + second_plan["site_id"][3:13]
+    assert second_account != account and second_db != db
+    assert command("/usr/sbin/runuser", "-u", second_account, "--",
+                   "/usr/local/bin/wp", "core", "is-installed",
+                   "--path=" + str(native.ROOT / second_plan["site_id"])) == ""
+    assert command("/usr/bin/mariadb", "-N", "-B", "-e",
+                   "SELECT SCHEMA_NAME FROM INFORMATION_SCHEMA.SCHEMATA "
+                   "WHERE SCHEMA_NAME='" + second_db + "';") == second_db
+    assert (native.ROOT / plan["site_id"]).stat().st_uid != (
+        native.ROOT / second_plan["site_id"]).stat().st_uid
+    assert (native.PHP_ROOT / "8.3/fpm/pool.d" /
+            (second_plan["site_id"] + ".conf")).is_file()
+    assert (native.NGINX_AVAILABLE / (second_plan["site_id"] + ".conf")).is_file()
+    assert (native.NGINX_ENABLED / (second_plan["site_id"] + ".conf")).is_symlink()
+    assert (native.NGINX_AVAILABLE / (plan["site_id"] + ".conf")).read_text() != (
+        native.NGINX_AVAILABLE / (second_plan["site_id"] + ".conf")).read_text()
+    check_site(domain)
+    check_site(second_domain)
+    sites = service.list_sites()
+    assert len(sites) == 2 and {site["domain"] for site in sites} == {
+        domain, second_domain}
+    for call in (lambda: service.create(second_plan, native.CONFIRMATION),
+                 lambda: service.plan("Duplicate second", "admin@native-two.test",
+                                      second_domain, "8.3")):
+        try:
+            call()
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("Second site's duplicate identity was accepted")
+    assert service.list_sites() == sites
+    check_site(domain)
+    check_site(second_domain)
+    print("PASS: disposable Ubuntu guest installed two isolated native WordPress "
+          "sites, preserved independent ownership and rejected forged/duplicate "
+          "plans", flush=True)
 
 
 if __name__ == "__main__":
