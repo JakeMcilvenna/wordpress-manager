@@ -63,7 +63,16 @@ def main():
     def token(page):
         return re.search('name="csrf" value="([a-f0-9]+)"', page).group(1)
     def post(path, values):
-        return opener.open('http://127.0.0.1:8080' + path, urllib.parse.urlencode(values).encode(), timeout=30).read().decode()
+        try:
+            return opener.open('http://127.0.0.1:8080' + path, urllib.parse.urlencode(values).encode(), timeout=30).read().decode()
+        except urllib.error.HTTPError as exc:
+            # Retain the server's diagnostic on a failed disposable-only control
+            # request; HTTP 409 alone hides the actual rejection reason in CI.
+            # Never print form values (CSRF tokens, passwords or confirmations).
+            detail = exc.read().decode('utf-8', errors='replace')
+            detail = re.sub(r'<[^>]*>', ' ', detail)
+            detail = re.sub(r'\s+', ' ', detail).strip()[:500]
+            raise AssertionError(f'control request {path} failed with HTTP {exc.code}: {detail}') from None
     page = get('/login')
     password = (CONTROL / 'initial-password').read_text().strip()
     post('/login', {'csrf': token(page), 'username': 'admin', 'password': password})
