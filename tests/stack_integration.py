@@ -71,7 +71,7 @@ def main():
             # Never print form values (CSRF tokens, passwords or confirmations).
             detail = exc.read().decode('utf-8', errors='replace')
             detail = re.sub(r'<[^>]*>', ' ', detail)
-            detail = re.sub(r'\\s+', ' ', detail).strip()[:500]
+            detail = re.sub(r'\s+', ' ', detail).strip()[:500]
             raise AssertionError(f'control request {path} failed with HTTP {exc.code}: {detail}') from None
     page = get('/login')
     password = (CONTROL / 'initial-password').read_text().strip()
