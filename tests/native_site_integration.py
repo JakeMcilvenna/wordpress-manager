@@ -115,7 +115,9 @@ def main():
     assert second_result["domain"] == second_domain
     assert second_result["password"] and len(second_result["password"]) >= 30
     # Never print or persist generated credentials.
-    assert native.read_record(second_plan["site_id"])["state"] == "created"
+    second_record = native.read_record(second_plan["site_id"])
+    assert second_record["state"] == "created" and second_record["domain"] == second_domain
+    assert all("password" not in key for key in second_record)
     assert native.read_record(plan["site_id"]) == record
     assert (native.ROOT / plan["site_id"] / "index.php").is_file()
     assert (native.ROOT / second_plan["site_id"] / "index.php").is_file()
