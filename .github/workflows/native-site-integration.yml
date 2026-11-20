@@ -43,6 +43,20 @@ jobs:
             wordpress-manager-native-test
           docker exec wm-native-test sh -c "printf 'disposable Ubuntu deployment test\n' > /run/wm-disposable-test"
 
+      - name: Align disposable guest's preinstalled packages with Ubuntu APT candidates
+        # Ubuntu's moving package indexes can otherwise propose upgrading an
+        # already-installed base package (for example perl-base) while planning
+        # WordPress dependencies. The provisioner correctly refuses that change.
+        # Refresh only this disposable guest, never weaken the ownership gate.
+        run: |
+          docker exec wm-native-test sh -ec '
+            test "$(cat /run/wm-disposable-test)" = "disposable Ubuntu deployment test"
+            export DEBIAN_FRONTEND=noninteractive
+            apt-get update -qq
+            apt-get upgrade -y -qq
+            dpkg --audit
+          '
+
       - name: Install real dashboard and restricted provisioner inside guest
         run: docker exec wm-native-test python3 /repo/tests/deploy_integration.py --disposable-system
 
